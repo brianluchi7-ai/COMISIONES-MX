@@ -93,8 +93,15 @@ def porcentaje_tramo_progresivo(n_venta):
         return 0.30
     return 0.0
 
+# === 🧩 Corrección: reiniciar conteo por mes ===
 df = df.sort_values(["agent", "date"]).reset_index(drop=True)
-df["ftd_num"] = df.groupby("agent").cumcount() + 1
+
+if not pd.api.types.is_datetime64_any_dtype(df["date"]):
+    df["date"] = pd.to_datetime(df["date"], errors="coerce", dayfirst=True)
+df = df.dropna(subset=["date"])
+
+df["year_month"] = df["date"].dt.to_period("M")
+df["ftd_num"] = df.groupby(["agent", "year_month"]).cumcount() + 1
 df["comm_pct"] = df["ftd_num"].apply(porcentaje_tramo_progresivo)
 df["commission_usd"] = df["usd"] * df["comm_pct"]
 
@@ -406,6 +413,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
