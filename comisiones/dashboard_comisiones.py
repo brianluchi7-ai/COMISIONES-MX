@@ -488,8 +488,8 @@ def actualizar_dashboard(
     # ======================
     # GUARDAR TARGET EDITADO DEL TEAM LEADER
     # ======================
-    if teamleader and target_tl:
-        TARGETS_RUNTIME[teamleader] = float(target_tl)
+    if rtn_teamleader and target_teamleader:
+       TARGETS_RUNTIME[rtn_teamleader] = float(target_teamleader)
 
 
     # === Filtros ===
@@ -583,14 +583,15 @@ def actualizar_dashboard(
     # ======================
     comision_teamleader = 0.0
 
-    if teamleader:
+    if rtn_teamleader:
         df_team = df_filtrado[
             (df_filtrado["type"].str.upper() == "RTN") &
-            (df_filtrado["team"] == teamleader)
+            (df_filtrado["team"] == rtn_teamleader)
         ]
 
         total_team_rtn = df_team["usd_neto"].sum()
-        target = TARGETS_RUNTIME.get(teamleader, 0)
+        target = TARGETS_RUNTIME.get(rtn_teamleader, 0)
+
 
         if target > 0:
             cumplimiento = total_team_rtn / target
@@ -717,6 +718,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
