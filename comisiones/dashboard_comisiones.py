@@ -93,6 +93,20 @@ def porcentaje_tramo_progresivo(n_venta):
         return 0.30
     return 0.0
 
+def porcentaje_rtn_progresivo(usd_total):
+    if usd_total <= 25000:
+        return 0.05
+    elif usd_total <= 50000:
+        return 0.06
+    elif usd_total <= 75000:
+        return 0.075
+    elif usd_total <= 101000:
+        return 0.09
+    elif usd_total <= 151000:
+        return 0.10
+    else:
+        return 0.12
+
 # === 🧩 Corrección: reiniciar conteo por mes ===
 df = df.sort_values(["agent", "date"]).reset_index(drop=True)
 
@@ -102,8 +116,96 @@ df = df.dropna(subset=["date"])
 
 df["year_month"] = df["date"].dt.to_period("M")
 df["ftd_num"] = df.groupby(["agent", "year_month"]).cumcount() + 1
-df["comm_pct"] = df["ftd_num"].apply(porcentaje_tramo_progresivo)
-df["commission_usd"] = df["usd"] * df["comm_pct"]
+
+# === FTD: lógica original (NO SE TOCA) ===
+df.loc[df["type"].str.upper() == "FTD", "comm_pct"] = (
+    df.loc[df["type"].str.upper() == "FTD", "ftd_num"]
+    .apply(porcentaje_tramo_progresivo)
+)
+df.loc[df["type"].str.upper() == "FTD", "usd_neto"] = df["usd"]
+df.loc[df["type"].str.upper() == "FTD", "commission_usd"] = (
+    df["usd"] * df["comm_pct"]
+)
+
+# ==========================
+# RTN → NETO REAL (DEP - WITHDRAWALS)
+# ==========================
+df_rtn = df[df["type"].str.upper() == "RTN"].copy()
+df_rtn = df_rtn.sort_values(["agent", "year_month", "date"]).reset_index(drop=True)
+
+# Withdrawals totales por agente
+withdrawals_map = (
+    df_withdrawals
+    .groupby("agent")["usd"]
+    .sum()
+    .to_dict()
+)
+
+# Total depósitos por agente/mes
+total_dep_map = (
+    df_rtn
+    .groupby(["agent", "year_month"])["usd"]
+    .sum()
+    .to_dict()
+)
+
+def calcular_usd_neto(row):
+    retiro_total = withdrawals_map.get(row["agent"], 0)
+    total_dep = total_dep_map.get((row["agent"], row["year_month"]), 0)
+
+    if total_dep <= 0:
+        return row["usd"]
+
+    proporcion = row["usd"] / total_dep
+    retiro_fila = retiro_total * proporcion
+    return max(row["usd"] - retiro_fila, 0)
+
+df_rtn["usd_neto"] = df_rtn.apply(calcular_usd_neto, axis=1)
+
+# 🔥 TOTAL NETO POR AGENT / MES
+total_neto_mes = (
+    df_rtn
+    .groupby(["agent", "year_month"])["usd_neto"]
+    .sum()
+    .reset_index(name="usd_total_mes")
+)
+
+# Determinar porcentaje ÚNICO por mes
+total_neto_mes["comm_pct"] = total_neto_mes["usd_total_mes"].apply(
+    porcentaje_rtn_progresivo
+)
+
+# Unir el porcentaje plano a cada fila
+df_rtn = df_rtn.merge(
+    total_neto_mes[["agent", "year_month", "comm_pct"]],
+    on=["agent", "year_month"],
+    how="left"
+)
+
+# 🔒 FIX CRÍTICO
+if "comm_pct" not in df_rtn.columns:
+    df_rtn["comm_pct"] = 0.0
+
+df_rtn["comm_pct"] = df_rtn["comm_pct"].fillna(0.0)
+
+# Comisión RTN sobre NETO
+df_rtn["commission_usd"] = df_rtn["usd_neto"] * df_rtn["comm_pct"]
+
+
+# Comisión RTN sobre NETO
+df_rtn["commission_usd"] = df_rtn["usd_neto"] * df_rtn["comm_pct"]
+
+# 🔥 FIX DEFINITIVO: reemplazar RTN originales por RTN procesados
+
+# Separar FTD intactos
+df_ftd = df[df["type"].str.upper() == "FTD"].copy()
+
+# Unir FTD + RTN ya calculados
+df = pd.concat([df_ftd, df_rtn], ignore_index=True)
+
+# Orden final limpio
+df = df.sort_values(["agent", "date"]).reset_index(drop=True)
+
 
 def week_of_month(dt):
     """
@@ -158,20 +260,16 @@ app.layout = html.Div(
 
                         html.Label("RTN Agent", style={"color": "#D4AF37", "fontWeight": "bold"}),
                         dcc.Dropdown(
-                            sorted(df[df["type"].str.upper() == "RTN"]["agent"].dropna().unique()),
-                            [],
-                            multi=True,
                             id="filtro-rtn-agent",
+                            multi=True,
                             placeholder="Selecciona RTN agent"
-                        ),
+                       ),
                         html.Br(),
 
                         html.Label("FTD Agent", style={"color": "#D4AF37", "fontWeight": "bold"}),
                         dcc.Dropdown(
-                            sorted(df[df["type"].str.upper() == "FTD"]["agent"].dropna().unique()),
-                            [],
-                            multi=True,
                             id="filtro-ftd-agent",
+                            multi=True,
                             placeholder="Selecciona FTD agent"
                         ),
                         html.Br(),
@@ -237,7 +335,44 @@ app.layout = html.Div(
     ],
 )
 
-# === Callback ===
+@app.callback(
+    [
+        Output("filtro-rtn-agent", "options"),
+        Output("filtro-ftd-agent", "options"),
+    ],
+    [
+        Input("filtro-fecha", "start_date"),
+        Input("filtro-fecha", "end_date"),
+    ],
+)
+def actualizar_agentes_por_fecha(start_date, end_date):
+
+    df_f = df.copy()
+
+    if start_date and end_date:
+        df_f = df_f[
+            (df_f["date"] >= pd.to_datetime(start_date)) &
+            (df_f["date"] <= pd.to_datetime(end_date))
+        ]
+
+    rtn_agents = sorted(
+        df_f[df_f["type"].str.upper() == "RTN"]["agent"]
+        .dropna()
+        .unique()
+    )
+
+    ftd_agents = sorted(
+        df_f[df_f["type"].str.upper() == "FTD"]["agent"]
+        .dropna()
+        .unique()
+    )
+
+    return (
+        [{"label": a, "value": a} for a in rtn_agents],
+        [{"label": a, "value": a} for a in ftd_agents],
+    )
+    
+
 @app.callback(
     [
         Output("card-porcentaje", "children"),
@@ -257,15 +392,17 @@ app.layout = html.Div(
     ],
 )
 def actualizar_dashboard(rtn_agents, ftd_agents, start_date, end_date, tipo_cambio):
+    
     df_filtrado = df.copy()
 
+    # === Filtros ===
     if rtn_agents or ftd_agents:
-        agentes_seleccionados = []
+        agentes = []
         if rtn_agents:
-            agentes_seleccionados += rtn_agents
+            agentes += rtn_agents
         if ftd_agents:
-            agentes_seleccionados += ftd_agents
-        df_filtrado = df_filtrado[df_filtrado["agent"].isin(agentes_seleccionados)]
+            agentes += ftd_agents
+        df_filtrado = df_filtrado[df_filtrado["agent"].isin(agentes)]
 
     if start_date and end_date:
         df_filtrado = df_filtrado[
@@ -273,27 +410,40 @@ def actualizar_dashboard(rtn_agents, ftd_agents, start_date, end_date, tipo_camb
             (df_filtrado["date"] <= pd.to_datetime(end_date))
         ]
 
+        df_filtrado = (
+            df_filtrado
+            .sort_values(["agent", "date"])
+            .reset_index(drop=True)
+        )
+
     if df_filtrado.empty:
         fig_vacio = px.scatter(title="Sin datos para mostrar")
-        fig_vacio.update_layout(paper_bgcolor="#0d0d0d", plot_bgcolor="#0d0d0d", font_color="#f2f2f2")
-        vacio = html.Div("Sin datos", style={"color": "#D4AF37", "textAlign": "center"})
+        fig_vacio.update_layout(
+            paper_bgcolor="#0d0d0d",
+            plot_bgcolor="#0d0d0d",
+            font_color="#f2f2f2"
+        )
+        vacio = html.Div("Sin datos", style={"color": "#D4AF37"})
         return vacio, vacio, vacio, vacio, vacio, fig_vacio, []
 
-    
-    # === BONUS SEMANAL EXACTO (por semana del mes, en base a depósitos) ===
-    df_filtrado["year"] = df_filtrado["date"].dt.year
-    df_filtrado["month"] = df_filtrado["date"].dt.month
+    # ======================
+    # BONUS SEMANAL (SOLO FTD)
+    # ======================
+    df_bonus = df_filtrado[df_filtrado["type"].str.upper() == "FTD"].copy()
+
+    df_bonus["year"] = df_bonus["date"].dt.year
+    df_bonus["month"] = df_bonus["date"].dt.month
 
     def week_of_month(dt):
         first_day = dt.replace(day=1)
         adjusted = dt.day + first_day.weekday()
         return int((adjusted - 1) / 7) + 1
 
-    df_filtrado["week_month"] = df_filtrado["date"].apply(week_of_month)
+    df_bonus["week_month"] = df_bonus["date"].apply(week_of_month)
 
-    # Cada fila = 1 depósito → contamos filas por semana
     df_semana = (
-        df_filtrado.groupby(["agent", "year", "month", "week_month"])
+        df_bonus
+        .groupby(["agent", "year", "month", "week_month"])
         .size()
         .reset_index(name="ftds")
     )
@@ -302,36 +452,47 @@ def actualizar_dashboard(rtn_agents, ftd_agents, start_date, end_date, tipo_camb
 
     for _, row in df_semana.iterrows():
         ftds = row["ftds"]
-        weekly_usd = 0.0
-
-        # === Reglas actualizadas del bonus por semana ===
-        # 2 o más FTDs → 500 MXN
-        # 4 o más FTDs → 1000 MXN
-        # 5–14 FTDs → 1500 MXN
-        # 15 o más FTDs → 150 USD directos
-
         if ftds >= 15:
-            weekly_usd = 150  # USD directo
+            bonus_total_usd += 150
         elif ftds >= 5:
-            weekly_usd = 1500 / tipo_cambio
+            bonus_total_usd += 1500 / tipo_cambio
         elif ftds >= 4:
-            weekly_usd = 1000 / tipo_cambio
+            bonus_total_usd += 1000 / tipo_cambio
         elif ftds >= 2:
-            weekly_usd = 500 / tipo_cambio
-
-        bonus_total_usd += weekly_usd
+            bonus_total_usd += 500 / tipo_cambio
 
     total_bonus = round(bonus_total_usd, 2)
 
+    # ======================
+    # 🔥 RECALCULO RTN POST-FILTRO (FIX DEFINITIVO)
+    # ======================
+    df_rtn_f = df_filtrado[df_filtrado["type"].str.upper() == "RTN"]
 
+    if not df_rtn_f.empty:
+        total_rtn_neto = df_rtn_f["usd_neto"].sum()
+        pct_rtn = porcentaje_rtn_progresivo(total_rtn_neto)
 
-    total_usd = df_filtrado["usd"].sum()
+        df_filtrado.loc[
+            df_filtrado["type"].str.upper() == "RTN", "comm_pct"
+        ] = pct_rtn
+
+        df_filtrado.loc[
+            df_filtrado["type"].str.upper() == "RTN", "commission_usd"
+        ] = df_filtrado["usd_neto"] * pct_rtn
+
+    # ======================
+    # TOTALES
+    # ======================
+    total_usd = df_filtrado["usd_neto"].sum()
     total_commission = df_filtrado["commission_usd"].sum()
     total_commission_final = total_commission + total_bonus
     total_ftd = len(df_filtrado)
-    promedio_pct = total_commission / total_usd if total_usd > 0 else 0.0
 
-    # === Cards y gráfico (sin tocar estructura) ===
+    pct_real = df_filtrado["comm_pct"].max() if not df_filtrado.empty else 0.0
+
+    # ======================
+    # CARDS
+    # ======================
     card_style = {
         "backgroundColor": "#1a1a1a",
         "borderRadius": "10px",
@@ -341,33 +502,46 @@ def actualizar_dashboard(rtn_agents, ftd_agents, start_date, end_date, tipo_camb
     }
 
     def card(title, value):
-        return html.Div([html.H4(title, style={"color": "#D4AF37"}), html.H2(value, style={"color": "#FFFFFF"})], style=card_style)
+        return html.Div(
+            [
+                html.H4(title, style={"color": "#D4AF37"}),
+                html.H2(value, style={"color": "#FFFFFF"}),
+            ],
+            style=card_style
+        )
 
     fig_agent = px.bar(
         df_filtrado.groupby("agent", as_index=False)["commission_usd"].sum(),
-        x="agent", y="commission_usd",
+        x="agent",
+        y="commission_usd",
         title="Comisión USD by Agent",
         color="commission_usd",
         color_continuous_scale="YlOrBr"
     )
-    fig_agent.update_layout(paper_bgcolor="#0d0d0d", plot_bgcolor="#0d0d0d", font_color="#f2f2f2", title_font_color="#D4AF37")
 
-    df_tabla = df_filtrado[[
-        "date", "agent", "type", "team", "country", "affiliate", "usd", "ftd_num", "comm_pct", "commission_usd"
-    ]].copy()
+    fig_agent.update_layout(
+        paper_bgcolor="#0d0d0d",
+        plot_bgcolor="#0d0d0d",
+        font_color="#f2f2f2",
+        title_font_color="#D4AF37"
+    )
+
+    df_tabla = df_filtrado[
+        ["date", "agent", "type", "team", "country", "affiliate", "usd", "ftd_num", "comm_pct", "commission_usd"]
+    ].copy()
+
     df_tabla["comm_pct"] = df_tabla["comm_pct"].apply(lambda x: f"{x*100:.2f}%")
     df_tabla["commission_usd"] = df_tabla["commission_usd"].round(2)
 
     return (
-        card("PORCENTAJE COMISIÓN", f"{promedio_pct*100:,.2f}%"),
+        card("PORCENTAJE COMISIÓN", f"{pct_real*100:,.2f}%"),
         card("VENTAS USD", f"{total_usd:,.2f}"),
         card("BONUS SEMANAL USD", f"{total_bonus:,.2f}"),
         card("COMISIÓN USD (TOTAL)", f"{total_commission_final:,.2f}"),
         card("TOTAL VENTAS (FTDs)", f"{total_ftd:,}"),
         fig_agent,
-        df_tabla.to_dict("records")
+        df_tabla.to_dict("records"),
     )
-
 
 # === 🔟 Index string para capturar imagen (igual que el otro dashboard) ===
 app.index_string = '''
@@ -413,6 +587,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
