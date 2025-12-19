@@ -24,8 +24,23 @@ def cargar_datos():
     print("📁 Leyendo desde CSV local...")
     return pd.read_csv("CMN_MASTER_MEX_preview.csv", dtype=str)
 
+def cargar_withdrawals():
+    try:
+        conexion = crear_conexion()
+        if conexion:
+            query = "SELECT agent, usd FROM withdrawals_mx_2025"
+            df_w = pd.read_sql(query, conexion)
+            conexion.close()
+            return df_w
+    except Exception as e:
+        print(f"⚠️ Error leyendo withdrawals: {e}")
+    return pd.DataFrame(columns=["agent", "usd"])
+
+
 # === Carga base ===
 df = cargar_datos()
+df_withdrawals = cargar_withdrawals()
+
 df.columns = [c.strip().lower() for c in df.columns]
 
 if "source" not in df.columns:
@@ -587,6 +602,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
