@@ -123,6 +123,20 @@ def porcentaje_rtn_progresivo(usd_total):
     else:
         return 0.12
 
+# =========================
+# NUEVOS TARGETS BASE TL
+# =========================
+TARGETS_BASE = {
+    "Luisa Medina": 180000,
+    "Hugo Del Castillo": 230000,
+    "Rafael Castellano": 230000,
+    "Carlos Frias": 210000,
+    "Diego Ceballos": 47000,
+}
+
+TARGETS_RUNTIME = TARGETS_BASE.copy()
+
+
 # === 🧩 Corrección: reiniciar conteo por mes ===
 df = df.sort_values(["agent", "date"]).reset_index(drop=True)
 
@@ -281,6 +295,13 @@ app.layout = html.Div(
                             placeholder="Selecciona RTN agent"
                        ),
                         html.Br(),
+                        html.Label("RTN Team Leader", style={"color": "#D4AF37", "fontWeight": "bold"}),
+                        dcc.Dropdown(
+                            id="filtro-rtn-teamleader",
+                            multi=False,
+                            placeholder="Selecciona RTN Team Leader"
+                        ),
+                        html.Br(),
 
                         html.Label("FTD Agent", style={"color": "#D4AF37", "fontWeight": "bold"}),
                         dcc.Dropdown(
@@ -297,7 +318,19 @@ app.layout = html.Div(
                             value=18.19,
                             min=10, max=25, step=0.01,
                             style={"width": "120px", "textAlign": "center", "marginTop": "10px"}
+                        
+                        ), 
+                        html.Br(),
+                        html.Label("Target Team Leader (USD)", style={"color": "#D4AF37", "fontWeight": "bold"}),
+                        dcc.Input(
+                            id="input-target-tl",
+                            type="number",
+                            value=0,
+                            min=0,
+                            step=1000,
+                            style={"width": "120px", "textAlign": "center", "marginTop": "10px"}
                         ),
+
                     ],
                 ),
 
@@ -352,6 +385,35 @@ app.layout = html.Div(
 )
 
 @app.callback(
+    Output("input-target-tl", "value"),
+    Input("filtro-rtn-teamleader", "value")
+)
+def cargar_target(teamleader):
+    if not teamleader:
+        return 0
+    return TARGETS_RUNTIME.get(teamleader, 0)
+
+
+@app.callback(
+    Output("filtro-rtn-teamleader", "options"),
+    Input("filtro-fecha", "start_date"),
+    Input("filtro-fecha", "end_date"),
+)
+def cargar_team_leaders(start_date, end_date):
+
+    df_f = df[df["type"].str.upper() == "RTN"].copy()
+
+    if start_date and end_date:
+        df_f = df_f[
+            (df_f["date"] >= pd.to_datetime(start_date)) &
+            (df_f["date"] <= pd.to_datetime(end_date))
+        ]
+
+    leaders = sorted(df_f["team"].dropna().unique())
+    return [{"label": l, "value": l} for l in leaders]
+
+
+@app.callback(
     [
         Output("filtro-rtn-agent", "options"),
         Output("filtro-ftd-agent", "options"),
@@ -404,12 +466,31 @@ def actualizar_agentes_por_fecha(start_date, end_date):
         Input("filtro-ftd-agent", "value"),
         Input("filtro-fecha", "start_date"),
         Input("filtro-fecha", "end_date"),
-        Input("input-tc", "value")
+        Input("input-tc", "value"),
+        Input("filtro-rtn-teamleader", "value"),
+        Input("input-target-tl", "value"),
     ],
 )
-def actualizar_dashboard(rtn_agents, ftd_agents, start_date, end_date, tipo_cambio):
+
+def actualizar_dashboard(
+    rtn_agents,
+    ftd_agents,
+    start_date,
+    end_date,
+    tipo_cambio,
+    rtn_teamleader,
+    target_teamleader
+):
+
     
     df_filtrado = df.copy()
+
+    # ======================
+    # GUARDAR TARGET EDITADO DEL TEAM LEADER
+    # ======================
+    if teamleader and target_tl:
+        TARGETS_RUNTIME[teamleader] = float(target_tl)
+
 
     # === Filtros ===
     if rtn_agents or ftd_agents:
@@ -496,13 +577,46 @@ def actualizar_dashboard(rtn_agents, ftd_agents, start_date, end_date, tipo_camb
             df_filtrado["type"].str.upper() == "RTN", "commission_usd"
         ] = df_filtrado["usd_neto"] * pct_rtn
 
+
+    # ======================
+    # 👑 COMISIÓN TEAM LEADER (SOLO RTN – SOLO CARDS)
+    # ======================
+    comision_teamleader = 0.0
+
+    if teamleader:
+        df_team = df_filtrado[
+            (df_filtrado["type"].str.upper() == "RTN") &
+            (df_filtrado["team"] == teamleader)
+        ]
+
+        total_team_rtn = df_team["usd_neto"].sum()
+        target = TARGETS_RUNTIME.get(teamleader, 0)
+
+        if target > 0:
+            cumplimiento = total_team_rtn / target
+
+            if cumplimiento < 0.75:
+                pct_tl = 0.0
+            elif cumplimiento < 1:
+                pct_tl = 0.008
+            else:
+                pct_tl = round(cumplimiento / 100, 4)
+
+            # 🎯 BONUS WALLET (si existe la columna y hay wallets)
+            if "method" in df_team.columns and \
+               df_team["method"].str.upper().str.contains("WALLET").any():
+                pct_tl += 0.05
+
+            comision_teamleader = total_team_rtn * pct_tl
+
     # ======================
     # TOTALES
     # ======================
     total_usd = df_filtrado["usd_neto"].sum()
     total_commission = df_filtrado["commission_usd"].sum()
-    total_commission_final = total_commission + total_bonus
+    total_commission_final = total_commission + total_bonus + comision_teamleader
     total_ftd = len(df_filtrado)
+
 
     pct_real = df_filtrado["comm_pct"].max() if not df_filtrado.empty else 0.0
 
@@ -603,6 +717,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
