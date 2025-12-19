@@ -43,6 +43,8 @@ df_withdrawals = cargar_withdrawals()
 
 df.columns = [c.strip().lower() for c in df.columns]
 
+df_withdrawals["usd"] = df_withdrawals["usd"].apply(limpiar_usd)
+
 if "source" not in df.columns:
     df["source"] = None
 if "type" not in df.columns:
@@ -602,6 +604,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
