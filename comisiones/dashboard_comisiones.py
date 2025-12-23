@@ -123,6 +123,22 @@ def porcentaje_rtn_progresivo(usd_total):
     else:
         return 0.12
 
+def calcular_comision_wallet(df_rtn, pct_base, pct_wallet_extra):
+    """
+    Aplica comisión separando WALLET y NO WALLET
+    """
+    if df_rtn.empty:
+        return 0.0
+
+    df_wallet = df_rtn[df_rtn["method"].str.upper() == "WALLET"] if "method" in df_rtn.columns else pd.DataFrame()
+    df_normal = df_rtn.drop(df_wallet.index)
+
+    usd_wallet = df_wallet["usd_neto"].sum()
+    usd_normal = df_normal["usd_neto"].sum()
+
+    return (usd_normal * pct_base) + (usd_wallet * (pct_base + pct_wallet_extra))
+
+
 # =========================
 # NUEVOS TARGETS BASE TL
 # =========================
@@ -577,49 +593,59 @@ def actualizar_dashboard(
             df_filtrado["type"].str.upper() == "RTN", "commission_usd"
         ] = df_filtrado["usd_neto"] * pct_rtn
 
+    # ======================
+    # DATASET TEAM LEADER (SOLO RTN)
+    # ======================
+    df_team = pd.DataFrame()
+    if rtn_teamleader:
+        df_team = df_filtrado[
+            (df_filtrado["type"].str.upper() == "RTN") &
+            (df_filtrado["team"] == rtn_teamleader)
+        ].copy()
 
     # ======================
     # 👑 COMISIÓN TEAM LEADER (SOLO RTN – SOLO CARDS)
     # ======================
     comision_teamleader = 0.0
-
-    if rtn_teamleader:
-        df_team = df_filtrado[
-            (df_filtrado["type"].str.upper() == "RTN") &
-            (df_filtrado["team"] == rtn_teamleader)
-        ]
-
+    pct_tl = 0.0
+    
+    if rtn_teamleader and not df_team.empty:
         total_team_rtn = df_team["usd_neto"].sum()
         target = TARGETS_RUNTIME.get(rtn_teamleader, 0)
-
-
+    
         if target > 0:
             cumplimiento = total_team_rtn / target
-
+    
             if cumplimiento < 0.75:
                 pct_tl = 0.0
             elif cumplimiento < 1:
-                pct_tl = 0.008
+                pct_tl = 0.012   # 1.20%
             else:
                 pct_tl = round(cumplimiento / 100, 4)
+    
+            # 🔥 WALLET TL = +5%
+            comision_teamleader = calcular_comision_wallet(
+                df_team,
+                pct_tl,
+                0.05
+            )
 
-            # 🎯 BONUS WALLET (si existe la columna y hay wallets)
-            if "method" in df_team.columns and \
-               df_team["method"].str.upper().str.contains("WALLET").any():
-                pct_tl += 0.05
-
-            comision_teamleader = total_team_rtn * pct_tl
 
     # ======================
-    # TOTALES
+    # TOTALES (TEAM LEADER TIENE PRIORIDAD)
     # ======================
-    total_usd = df_filtrado["usd_neto"].sum()
-    total_commission = df_filtrado["commission_usd"].sum()
-    total_commission_final = total_commission + total_bonus + comision_teamleader
-    total_ftd = len(df_filtrado)
-
-
-    pct_real = df_filtrado["comm_pct"].max() if not df_filtrado.empty else 0.0
+    if rtn_teamleader and not df_team.empty:
+        total_usd = df_team["usd_neto"].sum()
+        total_commission_final = comision_teamleader + total_bonus
+        total_ftd = len(df_team)
+        pct_real = pct_tl
+    else:
+        total_usd = df_filtrado["usd_neto"].sum()
+        total_commission_final = df_filtrado["commission_usd"].sum() + total_bonus
+        total_ftd = len(df_filtrado)
+        pct_real = df_filtrado["comm_pct"].max()
+    
+        pct_real = df_filtrado["comm_pct"].max() if not df_filtrado.empty else 0.0
 
     # ======================
     # CARDS
@@ -718,6 +744,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
