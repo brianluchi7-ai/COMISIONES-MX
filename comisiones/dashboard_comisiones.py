@@ -314,7 +314,7 @@ app.layout = html.Div(
                         html.Label("RTN Team Leader", style={"color": "#D4AF37", "fontWeight": "bold"}),
                         dcc.Dropdown(
                             id="filtro-rtn-teamleader",
-                            multi=True,
+                            multi=False,
                             placeholder="Selecciona RTN Team Leader"
                         ),
                         html.Br(),
@@ -501,6 +501,13 @@ def actualizar_dashboard(
     
     df_filtrado = df.copy()
 
+    
+    # ======================
+    # GUARDAR TARGET EDITADO DEL TEAM LEADER
+    # ======================
+    if rtn_teamleader and target_teamleader:
+       TARGETS_RUNTIME[rtn_teamleader] = float(target_teamleader)
+
 
     # ======================
     # 1️⃣ FILTRO POR FECHA (SIEMPRE PRIMERO)
@@ -540,13 +547,6 @@ def actualizar_dashboard(
         .sort_values(["agent", "date"])
         .reset_index(drop=True)
     )
-
-    # ======================
-    # GUARDAR TARGET EDITADO DEL TEAM LEADER
-    # ======================
-    if rtn_teamleader and target_teamleader:
-       TARGETS_RUNTIME[rtn_teamleader] = float(target_teamleader)
-
 
     if df_filtrado.empty:
         fig_vacio = px.scatter(title="Sin datos para mostrar")
@@ -764,6 +764,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
