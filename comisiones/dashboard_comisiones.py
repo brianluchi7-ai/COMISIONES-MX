@@ -202,10 +202,21 @@ df.loc[df["type"].str.upper() == "FTD", "commission_usd"] = (
 df_rtn = df[df["type"].str.upper() == "RTN"].copy()
 df_rtn = df_rtn.sort_values(["agent", "year_month", "date"]).reset_index(drop=True)
 
+# ==========================
+# FECHAS WITHDRAWALS (FIX)
+# ==========================
+if "date" not in df_withdrawals.columns:
+    raise Exception("❌ withdrawals_mx_2025 NO tiene columna 'date'")
+
+df_withdrawals["date"] = pd.to_datetime(df_withdrawals["date"], errors="coerce")
+df_withdrawals = df_withdrawals[df_withdrawals["date"].notna()]
+df_withdrawals["year_month"] = df_withdrawals["date"].dt.to_period("M")
+
+
 # Withdrawals totales por agente
 withdrawals_map = (
     df_withdrawals
-    .groupby("agent")["usd"]
+    .groupby(["agent", "year_month"])["usd"]
     .sum()
     .to_dict()
 )
@@ -219,7 +230,11 @@ total_dep_map = (
 )
 
 def calcular_usd_neto(row):
-    retiro_total = withdrawals_map.get(row["agent"], 0)
+    retiro_total = withdrawals_map.get(
+    (row["agent"], row["year_month"]),
+    0
+)
+
     total_dep = total_dep_map.get((row["agent"], row["year_month"]), 0)
 
     if total_dep <= 0:
@@ -781,6 +796,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
