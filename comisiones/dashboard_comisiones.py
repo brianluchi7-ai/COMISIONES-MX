@@ -501,40 +501,52 @@ def actualizar_dashboard(
     
     df_filtrado = df.copy()
 
+
     # ======================
-    # GUARDAR TARGET EDITADO DEL TEAM LEADER
+    # 1️⃣ FILTRO POR FECHA (SIEMPRE PRIMERO)
     # ======================
-    if rtn_teamleader and target_teamleader:
-       TARGETS_RUNTIME[rtn_teamleader] = float(target_teamleader)
-        
-
-    if rtn_teamleader:
-        df_filtrado = df_filtrado[
-            (df_filtrado["type"].str.upper() == "RTN") &
-            (df_filtrado["team"].isin(rtn_teamleader))
-        ]
-
-    
-    # === Filtros por agente (SOLO si NO hay Team Leader) ===
-    if not rtn_teamleader and (rtn_agents or ftd_agents):
-        agentes = []
-        if rtn_agents:
-            agentes += rtn_agents
-        if ftd_agents:
-            agentes += ftd_agents
-        df_filtrado = df_filtrado[df_filtrado["agent"].isin(agentes)]
-
     if start_date and end_date:
         df_filtrado = df_filtrado[
             (df_filtrado["date"] >= pd.to_datetime(start_date)) &
             (df_filtrado["date"] <= pd.to_datetime(end_date))
         ]
+    
+    # ======================
+    # 2️⃣ FILTRO RTN TEAM LEADER (TIENE PRIORIDAD TOTAL)
+    # ======================
+    if rtn_teamleader:
+        df_filtrado = df_filtrado[
+            (df_filtrado["type"].str.upper() == "RTN") &
+            (df_filtrado["team"].isin(rtn_teamleader))
+        ]
+    
+    # ======================
+    # 3️⃣ FILTRO POR AGENTES (SOLO SI NO HAY TEAM LEADER)
+    # ======================
+    elif rtn_agents or ftd_agents:
+        agentes = []
+        if rtn_agents:
+            agentes += rtn_agents
+        if ftd_agents:
+            agentes += ftd_agents
+    
+        df_filtrado = df_filtrado[df_filtrado["agent"].isin(agentes)]
+    
+    # ======================
+    # ORDEN FINAL
+    # ======================
+    df_filtrado = (
+        df_filtrado
+        .sort_values(["agent", "date"])
+        .reset_index(drop=True)
+    )
 
-        df_filtrado = (
-            df_filtrado
-            .sort_values(["agent", "date"])
-            .reset_index(drop=True)
-        )
+    # ======================
+    # GUARDAR TARGET EDITADO DEL TEAM LEADER
+    # ======================
+    if rtn_teamleader and target_teamleader:
+       TARGETS_RUNTIME[rtn_teamleader] = float(target_teamleader)
+
 
     if df_filtrado.empty:
         fig_vacio = px.scatter(title="Sin datos para mostrar")
@@ -752,6 +764,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
