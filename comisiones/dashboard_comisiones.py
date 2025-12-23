@@ -211,15 +211,25 @@ if "date" not in df_withdrawals.columns:
 df_withdrawals["date"] = pd.to_datetime(df_withdrawals["date"], errors="coerce")
 df_withdrawals = df_withdrawals[df_withdrawals["date"].notna()]
 df_withdrawals["year_month"] = df_withdrawals["date"].dt.to_period("M")
+df_withdrawals["agent"] = df_withdrawals["agent"].astype(str).str.strip().str.title()
+df_withdrawals["method"] = df_withdrawals["method"].astype(str).str.upper()
 
 
 # Withdrawals totales por agente
-withdrawals_map = (
-    df_withdrawals
+withdrawals_normal = (
+    df_withdrawals[df_withdrawals["method"] != "WALLET"]
     .groupby(["agent", "year_month"])["usd"]
     .sum()
     .to_dict()
 )
+
+withdrawals_wallet = (
+    df_withdrawals[df_withdrawals["method"] == "WALLET"]
+    .groupby(["agent", "year_month"])["usd"]
+    .sum()
+    .to_dict()
+)
+
 
 # Total depósitos por agente/mes
 total_dep_map = (
@@ -230,10 +240,22 @@ total_dep_map = (
 )
 
 def calcular_usd_neto(row):
-    retiro_total = withdrawals_map.get(
-    (row["agent"], row["year_month"]),
-    0
-)
+    key = (row["agent"], row["year_month"])
+
+    retiro_normal = withdrawals_normal.get(key, 0)
+    total_dep = total_dep_map.get(key, 0)
+
+    # Seguridad total
+    if total_dep <= 0:
+        return row["usd"]
+
+    # 🔒 El retiro nunca puede ser mayor al total depositado
+    retiro_aplicable = min(retiro_normal, total_dep)
+
+    proporcion = row["usd"] / total_dep
+    retiro_fila = retiro_aplicable * proporcion
+
+    return max(row["usd"] - retiro_fila, 0)
 
     total_dep = total_dep_map.get((row["agent"], row["year_month"]), 0)
 
@@ -796,6 +818,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
