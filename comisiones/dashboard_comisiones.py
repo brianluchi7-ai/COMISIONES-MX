@@ -657,15 +657,15 @@ def actualizar_dashboard(
         total_team_rtn = df_team["usd_neto"].sum()
         target = TARGETS_RUNTIME.get(rtn_teamleader, 0)
     
-    if target > 0:
-        cumplimiento = total_team_rtn / target
-        pct_tl = porcentaje_team_leader(cumplimiento)
-    
-        comision_teamleader = calcular_comision_wallet(
-            df_team,
-            pct_tl,
-            0.05   # wallet extra (lo validamos luego)
-        )
+        if target > 0:
+            cumplimiento = total_team_rtn / target
+            pct_tl = porcentaje_team_leader(cumplimiento)
+        
+            comision_teamleader = calcular_comision_wallet(
+                df_team,
+                pct_tl,
+                0.05   # wallet extra (lo validamos luego)
+            )
 
 
     # ======================
@@ -781,6 +781,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
