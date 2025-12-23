@@ -508,16 +508,16 @@ def actualizar_dashboard(
        TARGETS_RUNTIME[rtn_teamleader] = float(target_teamleader)
 
     # ======================
-    # FILTRO RTN POR TEAM LEADER (TABLA + GRÁFICO)
+    # FILTRO RTN POR TEAM LEADER (PRIORIDAD TOTAL)
     # ======================
     if rtn_teamleader:
         df_filtrado = df_filtrado[
-            (df_filtrado["type"].str.upper() != "RTN") |
+            (df_filtrado["type"].str.upper() == "RTN") &
             (df_filtrado["team"] == rtn_teamleader)
         ]
 
-    # === Filtros ===
-    if rtn_agents or ftd_agents:
+    # === Filtros por agente (SOLO si NO hay Team Leader) ===
+    if not rtn_teamleader and (rtn_agents or ftd_agents):
         agentes = []
         if rtn_agents:
             agentes += rtn_agents
@@ -752,6 +752,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
