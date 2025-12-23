@@ -28,7 +28,7 @@ def cargar_withdrawals():
     try:
         conexion = crear_conexion()
         if conexion:
-            query = "SELECT agent, usd FROM withdrawals_mx_2025"
+            query = "SELECT agent, usd, date, method FROM withdrawals_mx_2025"
             df_w = pd.read_sql(query, conexion)
             conexion.close()
             return df_w
@@ -796,6 +796,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
