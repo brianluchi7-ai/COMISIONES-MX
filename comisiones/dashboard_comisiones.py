@@ -138,6 +138,29 @@ def calcular_comision_wallet(df_rtn, pct_base, pct_wallet_extra):
 
     return (usd_normal * pct_base) + (usd_wallet * (pct_base + pct_wallet_extra))
 
+def porcentaje_team_leader(cumplimiento):
+    """
+    cumplimiento = total_team_rtn / target
+    retorna porcentaje en decimal
+    """
+    if cumplimiento < 0.75:
+        return 0.0
+    elif cumplimiento < 1.0:
+        return 0.008      # 0.8%
+    elif cumplimiento < 1.10:
+        return 0.01       # 1.0%
+    elif cumplimiento < 1.20:
+        return 0.011      # 1.10%
+    elif cumplimiento < 1.30:
+        return 0.012      # 1.20%
+    elif cumplimiento < 1.40:
+        return 0.013      # 1.30%
+    elif cumplimiento < 1.50:
+        return 0.014      # 1.40%
+    else:
+        return 0.015      # 1.50%
+
+
 
 # =========================
 # NUEVOS TARGETS BASE TL
@@ -634,22 +657,15 @@ def actualizar_dashboard(
         total_team_rtn = df_team["usd_neto"].sum()
         target = TARGETS_RUNTIME.get(rtn_teamleader, 0)
     
-        if target > 0:
-            cumplimiento = total_team_rtn / target
+    if target > 0:
+        cumplimiento = total_team_rtn / target
+        pct_tl = porcentaje_team_leader(cumplimiento)
     
-            if cumplimiento < 0.75:
-                pct_tl = 0.0
-            elif cumplimiento < 1:
-                pct_tl = 0.012   # 1.20%
-            else:
-                pct_tl = round(cumplimiento / 100, 4)
-    
-            # 🔥 WALLET TL = +5%
-            comision_teamleader = calcular_comision_wallet(
-                df_team,
-                pct_tl,
-                0.05
-            )
+        comision_teamleader = calcular_comision_wallet(
+            df_team,
+            pct_tl,
+            0.05   # wallet extra (lo validamos luego)
+        )
 
 
     # ======================
@@ -765,6 +781,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
