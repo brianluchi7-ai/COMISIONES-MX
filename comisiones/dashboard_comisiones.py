@@ -509,10 +509,10 @@ def actualizar_dashboard(
         
 
     if rtn_teamleader:
-    df_filtrado = df_filtrado[
-        (df_filtrado["type"].str.upper() == "RTN") &
-        (df_filtrado["team"].isin(rtn_teamleader))
-    ]
+        df_filtrado = df_filtrado[
+            (df_filtrado["type"].str.upper() == "RTN") &
+            (df_filtrado["team"].isin(rtn_teamleader))
+        ]
 
     
     # === Filtros por agente (SOLO si NO hay Team Leader) ===
@@ -752,6 +752,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
