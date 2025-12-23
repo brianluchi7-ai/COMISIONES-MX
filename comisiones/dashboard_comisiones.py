@@ -168,7 +168,7 @@ def porcentaje_team_leader(cumplimiento):
 TARGETS_BASE = {
     "Luisa Medina": 180000,
     "Hugo Del Castillo": 230000,
-    "Rafael Castellano": 230000,
+    "Rafael Castellanos": 230000,
     "Carlos Frias": 210000,
     "Diego Ceballos": 47000,
 }
@@ -781,6 +781,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
