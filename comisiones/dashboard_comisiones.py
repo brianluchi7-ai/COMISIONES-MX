@@ -314,7 +314,7 @@ app.layout = html.Div(
                         html.Label("RTN Team Leader", style={"color": "#D4AF37", "fontWeight": "bold"}),
                         dcc.Dropdown(
                             id="filtro-rtn-teamleader",
-                            multi=False,
+                            multi=True,
                             placeholder="Selecciona RTN Team Leader"
                         ),
                         html.Br(),
@@ -507,6 +507,14 @@ def actualizar_dashboard(
     if rtn_teamleader and target_teamleader:
        TARGETS_RUNTIME[rtn_teamleader] = float(target_teamleader)
 
+    # ======================
+    # FILTRO RTN POR TEAM LEADER (TABLA + GRÁFICO)
+    # ======================
+    if rtn_teamleader:
+        df_filtrado = df_filtrado[
+            (df_filtrado["type"].str.upper() != "RTN") |
+            (df_filtrado["team"] == rtn_teamleader)
+        ]
 
     # === Filtros ===
     if rtn_agents or ftd_agents:
@@ -744,6 +752,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
