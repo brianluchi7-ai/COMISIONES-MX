@@ -242,24 +242,16 @@ total_dep_map = (
 def calcular_usd_neto(row):
     key = (row["agent"], row["year_month"])
 
-    retiro_normal = withdrawals_normal.get(key, 0)
+    retiro = withdrawals_normal.get(key, 0)
     total_dep = total_dep_map.get(key, 0)
 
-    if total_dep <= 0:
+    if total_dep <= 0 or retiro <= 0:
         return row["usd"]
 
-    retiro_aplicable = min(retiro_normal, total_dep)
-
+    retiro_aplicable = min(retiro, total_dep)
     proporcion = row["usd"] / total_dep
     retiro_fila = retiro_aplicable * proporcion
 
-    return max(row["usd"] - retiro_fila, 0)
-
-    if total_dep <= 0:
-        return row["usd"]
-
-    proporcion = row["usd"] / total_dep
-    retiro_fila = retiro_total * proporcion
     return max(row["usd"] - retiro_fila, 0)
 
 df_rtn["usd_neto"] = df_rtn.apply(calcular_usd_neto, axis=1)
@@ -633,11 +625,7 @@ def actualizar_dashboard(
         df_filtrado.loc[
             df_filtrado["type"].str.upper() == "RTN", "comm_pct"
         ] = pct_rtn
-
-        df_filtrado.loc[
-            df_filtrado["type"].str.upper() == "RTN", "commission_usd"
-        ] = df_filtrado["usd_neto"] * pct_rtn
-
+        
     # ======================
     # DATASET TEAM LEADER (SOLO RTN)
     # ======================
@@ -674,7 +662,11 @@ def actualizar_dashboard(
     # TEAM LEADER
     # ======================
     if rtn_teamleader:
-        df_team = df_filtrado.copy()
+        df_team = df_filtrado[
+            (df_filtrado["type"].str.upper() == "RTN") &
+            (df_filtrado["team"] == rtn_teamleader)
+        ].copy()
+
 
         ventas_usd = df_team["usd"].sum()
         neto_total = df_team["usd_neto"].sum()
@@ -809,6 +801,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
