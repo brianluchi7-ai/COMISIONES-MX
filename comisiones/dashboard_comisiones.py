@@ -248,15 +248,12 @@ def calcular_usd_neto(row):
     if total_dep <= 0:
         return row["usd"]
 
-    # 🔒 Nunca se descuenta más de lo depositado
     retiro_aplicable = min(retiro_normal, total_dep)
 
     proporcion = row["usd"] / total_dep
     retiro_fila = retiro_aplicable * proporcion
 
     return max(row["usd"] - retiro_fila, 0)
-
-    total_dep = total_dep_map.get((row["agent"], row["year_month"]), 0)
 
     if total_dep <= 0:
         return row["usd"]
@@ -573,8 +570,9 @@ def actualizar_dashboard(
     if rtn_teamleader:
         df_filtrado = df_filtrado[
             (df_filtrado["type"].str.upper() == "RTN") &
-            (df_filtrado["team"] == rtn_teamleader)
+            (df_filtrado["team"].fillna("") == rtn_teamleader)
         ]
+
     elif rtn_agents or ftd_agents:
         agentes = []
         if rtn_agents: agentes += rtn_agents
@@ -756,7 +754,7 @@ def actualizar_dashboard(
     df_tabla["comm_pct"] = df_tabla["comm_pct"].apply(lambda x: f"{x*100:.2f}%")
     df_tabla["commission_usd"] = df_tabla["commission_usd"].round(2)
 
-     return (
+    return (
         card("PORCENTAJE COMISIÓN", f"{pct_real*100:.2f}%"),
         card("VENTAS USD", f"{ventas_usd:,.2f}"),
         card("BONUS SEMANAL USD", f"{bonus_total:,.2f}"),
@@ -765,6 +763,7 @@ def actualizar_dashboard(
         fig_agent,
         df_tabla.to_dict("records")
     )
+
 
 # === 🔟 Index string para capturar imagen (igual que el otro dashboard) ===
 app.index_string = '''
@@ -810,6 +809,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
