@@ -311,23 +311,6 @@ def week_of_month(dt):
     adjusted_dom = dt.day + first_day.weekday()
     return int((adjusted_dom - 1) / 7) + 1
 
-df_filtrado["commission_usd"] = 0.0
-
-if rtn_teamleader and not df_team.empty:
-    df_wallet = df_team[df_team["method"] == "WALLET"]
-    df_normal = df_team[df_team["method"] != "WALLET"]
-
-    df_filtrado.loc[df_normal.index, "commission_usd"] = df_normal["usd_neto"] * pct_tl
-    df_filtrado.loc[df_wallet.index, "commission_usd"] = df_wallet["usd_neto"] * (pct_tl + 0.05)
-
-else:
-    pct_base = pct_real
-    df_wallet = df_filtrado[df_filtrado["method"] == "WALLET"]
-    df_normal = df_filtrado[df_filtrado["method"] != "WALLET"]
-
-    df_filtrado.loc[df_normal.index, "commission_usd"] = df_normal["usd_neto"] * pct_base
-    df_filtrado.loc[df_wallet.index, "commission_usd"] = df_wallet["usd_neto"] * (pct_base + 0.02)
-
 
 # === App ===
 app = dash.Dash(__name__)
@@ -691,6 +674,22 @@ def actualizar_dashboard(
         pct_real = pct_base
         total_ftd = len(df_filtrado)
 
+    df_filtrado["commission_usd"] = 0.0
+
+        if rtn_teamleader and not df_team.empty:
+            df_wallet = df_team[df_team["method"] == "WALLET"]
+            df_normal = df_team[df_team["method"] != "WALLET"]
+        
+            df_filtrado.loc[df_normal.index, "commission_usd"] = df_normal["usd_neto"] * pct_tl
+            df_filtrado.loc[df_wallet.index, "commission_usd"] = df_wallet["usd_neto"] * (pct_tl + 0.05)
+        
+        else:
+            pct_base = pct_real
+            df_wallet = df_filtrado[df_filtrado["method"] == "WALLET"]
+            df_normal = df_filtrado[df_filtrado["method"] != "WALLET"]
+        
+            df_filtrado.loc[df_normal.index, "commission_usd"] = df_normal["usd_neto"] * pct_base
+            df_filtrado.loc[df_wallet.index, "commission_usd"] = df_wallet["usd_neto"] * (pct_base + 0.02)
     
 
     # ======================
@@ -791,6 +790,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
