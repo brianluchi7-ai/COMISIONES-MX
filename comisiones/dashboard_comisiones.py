@@ -738,7 +738,7 @@ def actualizar_dashboard(
         
         # Porcentajes
         pct_normal = pct_tl
-        pct_wallet = pct_tl + 0.05
+        pct_wallet = pct_tl + 0.02
         
         # Comisión final TL
         comision_agentrtn = (usd_normal * pct_normal) + (usd_wallet * pct_wallet)
@@ -794,6 +794,8 @@ def actualizar_dashboard(
         card("VENTAS USD", f"{total_usd:,.2f}"),
         card("BONUS SEMANAL USD", f"{total_bonus:,.2f}"),
         card("COMISIÓN USD (TOTAL)", f"{total_commission_final:,.2f}"),
+        card("COMISIÓN USD (TOTAL)", f"{comision_teamleader:,.2f}"),
+        card("COMISIÓN USD (TOTAL)", f"{comision_agentrtn:,.2f}"),
         card("TOTAL VENTAS (FTDs)", f"{total_ftd:,}"),
         fig_agent,
         df_tabla.to_dict("records"),
@@ -843,6 +845,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
