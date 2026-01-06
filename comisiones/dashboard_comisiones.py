@@ -631,10 +631,11 @@ def actualizar_dashboard(
     # ======================
     df_team = pd.DataFrame()
     if rtn_teamleader:
-        df_team = df_filtrado[
-            (df_filtrado["type"].str.upper() == "RTN") &
+        df_filtrado = df_filtrado[
+            (df_filtrado["type"].str.upper() != "RTN") |
             (df_filtrado["team"] == rtn_teamleader)
-        ].copy()
+        ]
+
 
 
     # ======================
@@ -749,7 +750,7 @@ def actualizar_dashboard(
     return (
         card("PORCENTAJE COMISIÓN", f"{pct_real*100:.2f}%"),
         card("VENTAS USD", f"{ventas_usd:,.2f}"),
-        card("BONUS SEMANAL USD", f"{bonus_total:,.2f}"),
+        card("BONUS SEMANAL USD", f"{bonus_total_usd:,.2f}"),
         card("COMISIÓN USD (TOTAL)", f"{comision_final:,.2f}"),
         card("TOTAL VENTAS (FTDs)", f"{total_ftd:,}"),
         fig_agent,
@@ -801,6 +802,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
