@@ -560,18 +560,6 @@ def actualizar_dashboard(
     
     df_filtrado = df.copy()
 
-    # === EXTRA WALLET PARA AGENT RTN ===
-    pct_wallet_agent = 0.0
-    
-    if not rtn_teamleader:
-        usd_wallet_agent = df_filtrado[
-            (df_filtrado["type"].str.upper() == "RTN") &
-            (df_filtrado["method"].str.upper() == "WALLET")
-        ]["usd_neto"].sum()
-    
-        if usd_wallet_agent > 0:
-            pct_wallet_agent = 0.02
-
     
     # ======================
     # GUARDAR TARGET EDITADO DEL TEAM LEADER
@@ -721,6 +709,7 @@ def actualizar_dashboard(
     # ======================
     if rtn_teamleader and not df_team.empty:
         total_usd = df_team["usd_neto"].sum()
+        
         # Separar wallet y no wallet
         df_wallet = df_team[df_team["method"].str.upper() == "WALLET"]
         df_normal = df_team[df_team["method"].str.upper() != "WALLET"]
@@ -739,11 +728,23 @@ def actualizar_dashboard(
         pct_real = pct_tl
     else:
         total_usd = df_filtrado["usd_neto"].sum()
-        total_commission_final = df_filtrado["commission_usd"].sum() + total_bonus
+        
+        # Separar wallet y no wallet
+        df_wallet = df_filtrado[df_filtrado["method"].str.upper() == "WALLET"]
+        df_normal = df_filtrado[df_filtrado["method"].str.upper() != "WALLET"]
+        
+        usd_wallet = df_wallet["usd_neto"].sum()
+        usd_normal = df_normal["usd_neto"].sum()
+        
+        # Porcentajes
+        pct_normal = pct_tl
+        pct_wallet = pct_tl + 0.05
+        
+        # Comisión final TL
+        comision_agentrtn = (usd_normal * pct_normal) + (usd_wallet * pct_wallet)
+
         total_ftd = len(df_filtrado)
-        pct_real = df_filtrado["comm_pct"].max()
-    
-        pct_real = df_filtrado["comm_pct"].max() if not df_filtrado.empty else 0.0
+        pct_real = pct_tl
 
     # ======================
     # CARDS
@@ -842,6 +843,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
