@@ -87,6 +87,34 @@ def limpiar_usd(valor):
 df_withdrawals["usd"] = df_withdrawals["usd"].apply(limpiar_usd)
 df["usd"] = df["usd"].apply(limpiar_usd)
 
+# ==========================
+# FECHAS WITHDRAWALS (FIX DEFINITIVO)
+# ==========================
+if "date" not in df_withdrawals.columns:
+    raise Exception("❌ withdrawals_mx_2025 NO tiene columna 'date'")
+
+df_withdrawals["date"] = pd.to_datetime(df_withdrawals["date"], errors="coerce")
+df_withdrawals = df_withdrawals[df_withdrawals["date"].notna()]
+df_withdrawals["year_month"] = df_withdrawals["date"].dt.to_period("M")
+
+df_withdrawals["agent"] = df_withdrawals["agent"].astype(str).str.strip().str.title()
+df_withdrawals["method"] = df_withdrawals["method"].astype(str).str.upper()
+
+# Withdrawals por agente / mes
+withdrawals_normal = (
+    df_withdrawals[df_withdrawals["method"] != "WALLET"]
+    .groupby(["agent", "year_month"])["usd"]
+    .sum()
+    .to_dict()
+)
+
+withdrawals_wallet = (
+    df_withdrawals[df_withdrawals["method"] == "WALLET"]
+    .groupby(["agent", "year_month"])["usd"]
+    .sum()
+    .to_dict()
+)
+
 # === Texto limpio ===
 for col in ["team", "agent", "country", "affiliate", "source", "id"]:
     if col in df.columns:
@@ -202,34 +230,6 @@ df.loc[df["type"].str.upper() == "FTD", "commission_usd"] = (
 df_rtn = df[df["type"].str.upper() == "RTN"].copy()
 df_rtn = df_rtn.sort_values(["agent", "year_month", "date"]).reset_index(drop=True)
 
-# ==========================
-# FECHAS WITHDRAWALS (FIX)
-# ==========================
-if "date" not in df_withdrawals.columns:
-    raise Exception("❌ withdrawals_mx_2025 NO tiene columna 'date'")
-
-df_withdrawals["date"] = pd.to_datetime(df_withdrawals["date"], errors="coerce")
-df_withdrawals = df_withdrawals[df_withdrawals["date"].notna()]
-df_withdrawals["year_month"] = df_withdrawals["date"].dt.to_period("M")
-df_withdrawals["agent"] = df_withdrawals["agent"].astype(str).str.strip().str.title()
-df_withdrawals["method"] = df_withdrawals["method"].astype(str).str.upper()
-
-
-# Withdrawals totales por agente
-withdrawals_normal = (
-    df_withdrawals[df_withdrawals["method"] != "WALLET"]
-    .groupby(["agent", "year_month"])["usd"]
-    .sum()
-    .to_dict()
-)
-
-withdrawals_wallet = (
-    df_withdrawals[df_withdrawals["method"] == "WALLET"]
-    .groupby(["agent", "year_month"])["usd"]
-    .sum()
-    .to_dict()
-)
-
 
 # Total depósitos por agente/mes
 total_dep_map = (
@@ -245,11 +245,10 @@ def calcular_usd_neto(row):
     retiro_normal = withdrawals_normal.get(key, 0)
     total_dep = total_dep_map.get(key, 0)
 
-    # Seguridad total
     if total_dep <= 0:
         return row["usd"]
 
-    # 🔒 El retiro nunca puede ser mayor al total depositado
+    # 🔒 Nunca se descuenta más de lo depositado
     retiro_aplicable = min(retiro_normal, total_dep)
 
     proporcion = row["usd"] / total_dep
@@ -561,6 +560,18 @@ def actualizar_dashboard(
     
     df_filtrado = df.copy()
 
+    # === EXTRA WALLET PARA AGENT RTN ===
+    pct_wallet_agent = 0.0
+    
+    if not rtn_teamleader:
+        usd_wallet_agent = df_filtrado[
+            (df_filtrado["type"].str.upper() == "RTN") &
+            (df_filtrado["method"].str.upper() == "WALLET")
+        ]["usd_neto"].sum()
+    
+        if usd_wallet_agent > 0:
+            pct_wallet_agent = 0.02
+
     
     # ======================
     # GUARDAR TARGET EDITADO DEL TEAM LEADER
@@ -818,6 +829,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
