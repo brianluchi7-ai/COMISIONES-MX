@@ -721,7 +721,20 @@ def actualizar_dashboard(
     # ======================
     if rtn_teamleader and not df_team.empty:
         total_usd = df_team["usd_neto"].sum()
-        total_commission_final = comision_teamleader + total_bonus
+        # Separar wallet y no wallet
+        df_wallet = df_team[df_team["method"].str.upper() == "WALLET"]
+        df_normal = df_team[df_team["method"].str.upper() != "WALLET"]
+        
+        usd_wallet = df_wallet["usd_neto"].sum()
+        usd_normal = df_normal["usd_neto"].sum()
+        
+        # Porcentajes
+        pct_normal = pct_tl
+        pct_wallet = pct_tl + 0.05
+        
+        # Comisión final TL
+        comision_teamleader = (usd_normal * pct_normal) + (usd_wallet * pct_wallet)
+
         total_ftd = len(df_team)
         pct_real = pct_tl
     else:
@@ -829,6 +842,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
