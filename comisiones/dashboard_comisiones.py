@@ -311,6 +311,23 @@ def week_of_month(dt):
     adjusted_dom = dt.day + first_day.weekday()
     return int((adjusted_dom - 1) / 7) + 1
 
+df_filtrado["commission_usd"] = 0.0
+
+if rtn_teamleader and not df_team.empty:
+    df_wallet = df_team[df_team["method"] == "WALLET"]
+    df_normal = df_team[df_team["method"] != "WALLET"]
+
+    df_filtrado.loc[df_normal.index, "commission_usd"] = df_normal["usd_neto"] * pct_tl
+    df_filtrado.loc[df_wallet.index, "commission_usd"] = df_wallet["usd_neto"] * (pct_tl + 0.05)
+
+else:
+    pct_base = pct_real
+    df_wallet = df_filtrado[df_filtrado["method"] == "WALLET"]
+    df_normal = df_filtrado[df_filtrado["method"] != "WALLET"]
+
+    df_filtrado.loc[df_normal.index, "commission_usd"] = df_normal["usd_neto"] * pct_base
+    df_filtrado.loc[df_wallet.index, "commission_usd"] = df_wallet["usd_neto"] * (pct_base + 0.02)
+
 
 # === App ===
 app = dash.Dash(__name__)
@@ -625,43 +642,13 @@ def actualizar_dashboard(
         df_filtrado.loc[
             df_filtrado["type"].str.upper() == "RTN", "comm_pct"
         ] = pct_rtn
+
+    
         
     # ======================
     # DATASET TEAM LEADER (SOLO RTN)
     # ======================
     df_team = pd.DataFrame()
-    if rtn_teamleader:
-        df_filtrado = df_filtrado[
-            (df_filtrado["type"].str.upper() != "RTN") |
-            (df_filtrado["team"] == rtn_teamleader)
-        ]
-
-
-
-    # ======================
-    # 👑 COMISIÓN TEAM LEADER (SOLO RTN – SOLO CARDS)
-    # ======================
-    comision_teamleader = 0.0
-    pct_tl = 0.0
-    
-    if rtn_teamleader and not df_team.empty:
-        total_team_rtn = df_team["usd_neto"].sum()
-        target = TARGETS_RUNTIME.get(rtn_teamleader, 0)
-    
-        if target > 0:
-            cumplimiento = total_team_rtn / target
-            pct_tl = porcentaje_team_leader(cumplimiento)
-        
-            comision_teamleader = calcular_comision_wallet(
-                df_team,
-                pct_tl,
-                0.05   # wallet extra (lo validamos luego)
-            )
-
-
-    # ======================
-    # TEAM LEADER
-    # ======================
     if rtn_teamleader:
         df_team = df_filtrado[
             (df_filtrado["type"].str.upper() == "RTN") &
@@ -703,6 +690,8 @@ def actualizar_dashboard(
         comision_final = (usd_normal * pct_base) + (usd_wallet * (pct_base + 0.02))
         pct_real = pct_base
         total_ftd = len(df_filtrado)
+
+    
 
     # ======================
     # CARDS
@@ -802,6 +791,7 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
