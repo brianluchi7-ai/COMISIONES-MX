@@ -557,67 +557,35 @@ def actualizar_dashboard(
     target_teamleader
 ):
 
-    
     df_filtrado = df.copy()
 
-    
-    # ======================
-    # GUARDAR TARGET EDITADO DEL TEAM LEADER
-    # ======================
     if rtn_teamleader and target_teamleader:
-       TARGETS_RUNTIME[rtn_teamleader] = float(target_teamleader)
+        TARGETS_RUNTIME[rtn_teamleader] = float(target_teamleader)
 
-
-    # ======================
-    # 1️⃣ FILTRO POR FECHA (SIEMPRE PRIMERO)
-    # ======================
+    # 1️⃣ FILTRO FECHA
     if start_date and end_date:
         df_filtrado = df_filtrado[
             (df_filtrado["date"] >= pd.to_datetime(start_date)) &
             (df_filtrado["date"] <= pd.to_datetime(end_date))
         ]
-    
-    # ======================
-    # 2️⃣ FILTRO RTN TEAM LEADER (TIENE PRIORIDAD TOTAL)
-    # ======================
+
+    # 2️⃣ TEAM LEADER PRIORIDAD
     if rtn_teamleader:
         df_filtrado = df_filtrado[
             (df_filtrado["type"].str.upper() == "RTN") &
             (df_filtrado["team"] == rtn_teamleader)
         ]
-
-    
-    # ======================
-    # 3️⃣ FILTRO POR AGENTES (SOLO SI NO HAY TEAM LEADER)
-    # ======================
     elif rtn_agents or ftd_agents:
         agentes = []
-        if rtn_agents:
-            agentes += rtn_agents
-        if ftd_agents:
-            agentes += ftd_agents
-    
+        if rtn_agents: agentes += rtn_agents
+        if ftd_agents: agentes += ftd_agents
         df_filtrado = df_filtrado[df_filtrado["agent"].isin(agentes)]
-    
-    # ======================
-    # ORDEN FINAL
-    # ======================
-    df_filtrado = (
-        df_filtrado
-        .sort_values(["agent", "date"])
-        .reset_index(drop=True)
-    )
 
     if df_filtrado.empty:
-        fig_vacio = px.scatter(title="Sin datos para mostrar")
-        fig_vacio.update_layout(
-            paper_bgcolor="#0d0d0d",
-            plot_bgcolor="#0d0d0d",
-            font_color="#f2f2f2"
-        )
-        vacio = html.Div("Sin datos", style={"color": "#D4AF37"})
-        return vacio, vacio, vacio, vacio, vacio, fig_vacio, []
+        fig_vacio = px.scatter()
+        return html.Div(), html.Div(), html.Div(), html.Div(), html.Div(), fig_vacio, []
 
+    
     # ======================
     # BONUS SEMANAL (SOLO FTD)
     # ======================
@@ -705,46 +673,45 @@ def actualizar_dashboard(
 
 
     # ======================
-    # TOTALES (TEAM LEADER TIENE PRIORIDAD)
+    # TEAM LEADER
     # ======================
-    if rtn_teamleader and not df_team.empty:
-        total_usd = df_team["usd_neto"].sum()
-        
-        # Separar wallet y no wallet
-        df_wallet = df_team[df_team["method"].str.upper() == "WALLET"]
-        df_normal = df_team[df_team["method"].str.upper() != "WALLET"]
-        
+    if rtn_teamleader:
+        df_team = df_filtrado.copy()
+
+        ventas_usd = df_team["usd"].sum()
+        neto_total = df_team["usd_neto"].sum()
+
+        target = TARGETS_RUNTIME.get(rtn_teamleader, 0)
+        pct_tl = porcentaje_team_leader(neto_total / target) if target > 0 else 0
+
+        df_wallet = df_team[df_team["method"] == "WALLET"]
+        df_normal = df_team[df_team["method"] != "WALLET"]
+
         usd_wallet = df_wallet["usd_neto"].sum()
         usd_normal = df_normal["usd_neto"].sum()
-        
-        # Porcentajes
-        pct_normal = pct_tl
-        pct_wallet = pct_tl + 0.05
-        
-        # Comisión final TL
-        comision_teamleader = (usd_normal * pct_normal) + (usd_wallet * pct_wallet)
 
+        comision_final = (usd_normal * pct_tl) + (usd_wallet * (pct_tl + 0.05))
+        pct_real = pct_tl
         total_ftd = len(df_team)
-        pct_real = pct_tl
+        
+    # ======================
+    # AGENT RTN
+    # ======================
     else:
-        total_usd = df_filtrado["usd_neto"].sum()
-        
-        # Separar wallet y no wallet
-        df_wallet = df_filtrado[df_filtrado["method"].str.upper() == "WALLET"]
-        df_normal = df_filtrado[df_filtrado["method"].str.upper() != "WALLET"]
-        
+        ventas_usd = df_filtrado["usd"].sum()
+        neto_total = df_filtrado["usd_neto"].sum()
+
+        pct_base = porcentaje_rtn_progresivo(neto_total)
+
+        df_wallet = df_filtrado[df_filtrado["method"] == "WALLET"]
+        df_normal = df_filtrado[df_filtrado["method"] != "WALLET"]
+
         usd_wallet = df_wallet["usd_neto"].sum()
         usd_normal = df_normal["usd_neto"].sum()
-        
-        # Porcentajes
-        pct_normal = pct_tl
-        pct_wallet = pct_tl + 0.02
-        
-        # Comisión final TL
-        comision_agentrtn = (usd_normal * pct_normal) + (usd_wallet * pct_wallet)
 
+        comision_final = (usd_normal * pct_base) + (usd_wallet * (pct_base + 0.02))
+        pct_real = pct_base
         total_ftd = len(df_filtrado)
-        pct_real = pct_tl
 
     # ======================
     # CARDS
@@ -789,16 +756,14 @@ def actualizar_dashboard(
     df_tabla["comm_pct"] = df_tabla["comm_pct"].apply(lambda x: f"{x*100:.2f}%")
     df_tabla["commission_usd"] = df_tabla["commission_usd"].round(2)
 
-    return (
-        card("PORCENTAJE COMISIÓN", f"{pct_real*100:,.2f}%"),
-        card("VENTAS USD", f"{total_usd:,.2f}"),
-        card("BONUS SEMANAL USD", f"{total_bonus:,.2f}"),
-        card("COMISIÓN USD (TOTAL)", f"{total_commission_final:,.2f}"),
-        card("COMISIÓN USD (TOTAL)", f"{comision_teamleader:,.2f}"),
-        card("COMISIÓN USD (TOTAL)", f"{comision_agentrtn:,.2f}"),
+     return (
+        card("PORCENTAJE COMISIÓN", f"{pct_real*100:.2f}%"),
+        card("VENTAS USD", f"{ventas_usd:,.2f}"),
+        card("BONUS SEMANAL USD", f"{bonus_total:,.2f}"),
+        card("COMISIÓN USD (TOTAL)", f"{comision_final:,.2f}"),
         card("TOTAL VENTAS (FTDs)", f"{total_ftd:,}"),
         fig_agent,
-        df_tabla.to_dict("records"),
+        df_tabla.to_dict("records")
     )
 
 # === 🔟 Index string para capturar imagen (igual que el otro dashboard) ===
