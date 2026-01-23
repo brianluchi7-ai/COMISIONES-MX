@@ -22,13 +22,17 @@ def cargar_datos():
         print(f"⚠️ Error conectando a SQL, leyendo CSV local: {e}")
 
     print("📁 Leyendo desde CSV local...")
-    return pd.read_csv("CMN_MASTER_MEX_preview.csv", dtype=str)
+    return pd.read_csv("CMN_MASTER_preview.csv", dtype=str)
+
+# =========================
+# CARGA WITHDRAWALS RTN
+# =========================
 
 def cargar_withdrawals():
     try:
         conexion = crear_conexion()
         if conexion:
-            query = "SELECT agent, usd, date, method FROM withdrawals_mx_2025"
+            query = "SELECT agent, usd FROM withdrawals_mx_2025"
             df_w = pd.read_sql(query, conexion)
             conexion.close()
             return df_w
@@ -83,37 +87,9 @@ def limpiar_usd(valor):
         return float(s)
     except:
         return 0.0
-        
-df_withdrawals["usd"] = df_withdrawals["usd"].apply(limpiar_usd)
+
 df["usd"] = df["usd"].apply(limpiar_usd)
-
-# ==========================
-# FECHAS WITHDRAWALS (FIX DEFINITIVO)
-# ==========================
-if "date" not in df_withdrawals.columns:
-    raise Exception("❌ withdrawals_mx_2025 NO tiene columna 'date'")
-
-df_withdrawals["date"] = pd.to_datetime(df_withdrawals["date"], errors="coerce")
-df_withdrawals = df_withdrawals[df_withdrawals["date"].notna()]
-df_withdrawals["year_month"] = df_withdrawals["date"].dt.to_period("M")
-
-df_withdrawals["agent"] = df_withdrawals["agent"].astype(str).str.strip().str.title()
-df_withdrawals["method"] = df_withdrawals["method"].astype(str).str.upper()
-
-# Withdrawals por agente / mes
-withdrawals_normal = (
-    df_withdrawals[df_withdrawals["method"] != "WALLET"]
-    .groupby(["agent", "year_month"])["usd"]
-    .sum()
-    .to_dict()
-)
-
-withdrawals_wallet = (
-    df_withdrawals[df_withdrawals["method"] == "WALLET"]
-    .groupby(["agent", "year_month"])["usd"]
-    .sum()
-    .to_dict()
-)
+df_withdrawals["usd"] = df_withdrawals["usd"].apply(limpiar_usd)
 
 # === Texto limpio ===
 for col in ["team", "agent", "country", "affiliate", "source", "id"]:
@@ -151,58 +127,6 @@ def porcentaje_rtn_progresivo(usd_total):
     else:
         return 0.12
 
-def calcular_comision_wallet(df_rtn, pct_base, pct_wallet_extra):
-    """
-    Aplica comisión separando WALLET y NO WALLET
-    """
-    if df_rtn.empty:
-        return 0.0
-
-    df_wallet = df_rtn[df_rtn["method"].str.upper() == "WALLET"] if "method" in df_rtn.columns else pd.DataFrame()
-    df_normal = df_rtn.drop(df_wallet.index)
-
-    usd_wallet = df_wallet["usd_neto"].sum()
-    usd_normal = df_normal["usd_neto"].sum()
-
-    return (usd_normal * pct_base) + (usd_wallet * (pct_base + pct_wallet_extra))
-
-def porcentaje_team_leader(cumplimiento):
-    """
-    cumplimiento = total_team_rtn / target
-    retorna porcentaje en decimal
-    """
-    if cumplimiento < 0.75:
-        return 0.0
-    elif cumplimiento < 1.0:
-        return 0.008      # 0.8%
-    elif cumplimiento < 1.10:
-        return 0.01       # 1.0%
-    elif cumplimiento < 1.20:
-        return 0.011      # 1.10%
-    elif cumplimiento < 1.30:
-        return 0.012      # 1.20%
-    elif cumplimiento < 1.40:
-        return 0.013      # 1.30%
-    elif cumplimiento < 1.50:
-        return 0.014      # 1.40%
-    else:
-        return 0.015      # 1.50%
-
-
-
-# =========================
-# NUEVOS TARGETS BASE TL
-# =========================
-TARGETS_BASE = {
-    "Luisa Medina": 180000,
-    "Hugo Del Castillo": 230000,
-    "Rafael Castellanos": 230000,
-    "Carlos Frias": 210000,
-    "Diego Ceballos": 47000,
-}
-
-TARGETS_RUNTIME = TARGETS_BASE.copy()
-
 
 # === 🧩 Corrección: reiniciar conteo por mes ===
 df = df.sort_values(["agent", "date"]).reset_index(drop=True)
@@ -230,6 +154,13 @@ df.loc[df["type"].str.upper() == "FTD", "commission_usd"] = (
 df_rtn = df[df["type"].str.upper() == "RTN"].copy()
 df_rtn = df_rtn.sort_values(["agent", "year_month", "date"]).reset_index(drop=True)
 
+# Withdrawals totales por agente
+withdrawals_map = (
+    df_withdrawals
+    .groupby("agent")["usd"]
+    .sum()
+    .to_dict()
+)
 
 # Total depósitos por agente/mes
 total_dep_map = (
@@ -240,18 +171,14 @@ total_dep_map = (
 )
 
 def calcular_usd_neto(row):
-    key = (row["agent"], row["year_month"])
+    retiro_total = withdrawals_map.get(row["agent"], 0)
+    total_dep = total_dep_map.get((row["agent"], row["year_month"]), 0)
 
-    retiro = withdrawals_normal.get(key, 0)
-    total_dep = total_dep_map.get(key, 0)
-
-    if total_dep <= 0 or retiro <= 0:
+    if total_dep <= 0:
         return row["usd"]
 
-    retiro_aplicable = min(retiro, total_dep)
     proporcion = row["usd"] / total_dep
-    retiro_fila = retiro_aplicable * proporcion
-
+    retiro_fila = retiro_total * proporcion
     return max(row["usd"] - retiro_fila, 0)
 
 df_rtn["usd_neto"] = df_rtn.apply(calcular_usd_neto, axis=1)
@@ -358,13 +285,7 @@ app.layout = html.Div(
                             multi=True,
                             placeholder="Selecciona RTN agent"
                        ),
-                        html.Br(),
-                        html.Label("RTN Team Leader", style={"color": "#D4AF37", "fontWeight": "bold"}),
-                        dcc.Dropdown(
-                            id="filtro-rtn-teamleader",
-                            multi=False,
-                            placeholder="Selecciona RTN Team Leader"
-                        ),
+
                         html.Br(),
 
                         html.Label("FTD Agent", style={"color": "#D4AF37", "fontWeight": "bold"}),
@@ -373,6 +294,7 @@ app.layout = html.Div(
                             multi=True,
                             placeholder="Selecciona FTD agent"
                         ),
+
                         html.Br(),
 
                         html.Label("Tipo de cambio (MXN/USD)", style={"color": "#D4AF37", "fontWeight": "bold"}),
@@ -382,19 +304,7 @@ app.layout = html.Div(
                             value=18.19,
                             min=10, max=25, step=0.01,
                             style={"width": "120px", "textAlign": "center", "marginTop": "10px"}
-                        
-                        ), 
-                        html.Br(),
-                        html.Label("Target Team Leader (USD)", style={"color": "#D4AF37", "fontWeight": "bold"}),
-                        dcc.Input(
-                            id="input-target-tl",
-                            type="number",
-                            value=0,
-                            min=0,
-                            step=1000,
-                            style={"width": "120px", "textAlign": "center", "marginTop": "10px"}
                         ),
-
                     ],
                 ),
 
@@ -447,36 +357,6 @@ app.layout = html.Div(
         ),
     ],
 )
-
-@app.callback(
-    Output("input-target-tl", "value"),
-    Input("filtro-rtn-teamleader", "value")
-)
-def cargar_target(teamleader):
-    if not teamleader:
-        return 0
-    return TARGETS_RUNTIME.get(teamleader, 0)
-
-
-@app.callback(
-    Output("filtro-rtn-teamleader", "options"),
-    Input("filtro-fecha", "start_date"),
-    Input("filtro-fecha", "end_date"),
-)
-def cargar_team_leaders(start_date, end_date):
-
-    df_f = df[df["type"].str.upper() == "RTN"].copy()
-
-    if start_date and end_date:
-        df_f = df_f[
-            (df_f["date"] >= pd.to_datetime(start_date)) &
-            (df_f["date"] <= pd.to_datetime(end_date))
-        ]
-
-    leaders = sorted(df_f["team"].dropna().unique())
-    return [{"label": l, "value": l} for l in leaders]
-
-
 @app.callback(
     [
         Output("filtro-rtn-agent", "options"),
@@ -513,7 +393,7 @@ def actualizar_agentes_por_fecha(start_date, end_date):
         [{"label": a, "value": a} for a in rtn_agents],
         [{"label": a, "value": a} for a in ftd_agents],
     )
-    
+
 
 @app.callback(
     [
@@ -530,52 +410,44 @@ def actualizar_agentes_por_fecha(start_date, end_date):
         Input("filtro-ftd-agent", "value"),
         Input("filtro-fecha", "start_date"),
         Input("filtro-fecha", "end_date"),
-        Input("input-tc", "value"),
-        Input("filtro-rtn-teamleader", "value"),
-        Input("input-target-tl", "value"),
+        Input("input-tc", "value")
     ],
 )
-
-def actualizar_dashboard(
-    rtn_agents,
-    ftd_agents,
-    start_date,
-    end_date,
-    tipo_cambio,
-    rtn_teamleader,
-    target_teamleader
-):
+def actualizar_dashboard(rtn_agents, ftd_agents, start_date, end_date, tipo_cambio):
 
     df_filtrado = df.copy()
 
-    if rtn_teamleader and target_teamleader:
-        TARGETS_RUNTIME[rtn_teamleader] = float(target_teamleader)
+    # === Filtros ===
+    if rtn_agents or ftd_agents:
+        agentes = []
+        if rtn_agents:
+            agentes += rtn_agents
+        if ftd_agents:
+            agentes += ftd_agents
+        df_filtrado = df_filtrado[df_filtrado["agent"].isin(agentes)]
 
-    # 1️⃣ FILTRO FECHA
     if start_date and end_date:
         df_filtrado = df_filtrado[
             (df_filtrado["date"] >= pd.to_datetime(start_date)) &
             (df_filtrado["date"] <= pd.to_datetime(end_date))
         ]
 
-    # 2️⃣ TEAM LEADER PRIORIDAD
-    if rtn_teamleader:
-        df_filtrado = df_filtrado[
-            (df_filtrado["type"].str.upper() == "RTN") &
-            (df_filtrado["team"].fillna("") == rtn_teamleader)
-        ]
-
-    elif rtn_agents or ftd_agents:
-        agentes = []
-        if rtn_agents: agentes += rtn_agents
-        if ftd_agents: agentes += ftd_agents
-        df_filtrado = df_filtrado[df_filtrado["agent"].isin(agentes)]
+        df_filtrado = (
+            df_filtrado
+            .sort_values(["agent", "date"])
+            .reset_index(drop=True)
+        )
 
     if df_filtrado.empty:
-        fig_vacio = px.scatter()
-        return html.Div(), html.Div(), html.Div(), html.Div(), html.Div(), fig_vacio, []
+        fig_vacio = px.scatter(title="Sin datos para mostrar")
+        fig_vacio.update_layout(
+            paper_bgcolor="#0d0d0d",
+            plot_bgcolor="#0d0d0d",
+            font_color="#f2f2f2"
+        )
+        vacio = html.Div("Sin datos", style={"color": "#D4AF37"})
+        return vacio, vacio, vacio, vacio, vacio, fig_vacio, []
 
-    
     # ======================
     # BONUS SEMANAL (SOLO FTD)
     # ======================
@@ -626,72 +498,19 @@ def actualizar_dashboard(
             df_filtrado["type"].str.upper() == "RTN", "comm_pct"
         ] = pct_rtn
 
-    
-        
+        df_filtrado.loc[
+            df_filtrado["type"].str.upper() == "RTN", "commission_usd"
+        ] = df_filtrado["usd_neto"] * pct_rtn
+
     # ======================
-    # DATASET TEAM LEADER (SOLO RTN)
+    # TOTALES
     # ======================
-    df_team = pd.DataFrame()
-    if rtn_teamleader:
-        df_team = df_filtrado[
-            (df_filtrado["type"].str.upper() == "RTN") &
-            (df_filtrado["team"] == rtn_teamleader)
-        ].copy()
+    total_usd = df_filtrado["usd_neto"].sum()
+    total_commission = df_filtrado["commission_usd"].sum()
+    total_commission_final = total_commission + total_bonus
+    total_ftd = len(df_filtrado)
 
-
-        ventas_usd = df_team["usd"].sum()
-        neto_total = df_team["usd_neto"].sum()
-
-        target = TARGETS_RUNTIME.get(rtn_teamleader, 0)
-        pct_tl = porcentaje_team_leader(neto_total / target) if target > 0 else 0
-
-        df_wallet = df_team[df_team["method"] == "WALLET"]
-        df_normal = df_team[df_team["method"] != "WALLET"]
-
-        usd_wallet = df_wallet["usd_neto"].sum()
-        usd_normal = df_normal["usd_neto"].sum()
-
-        comision_final = (usd_normal * pct_tl) + (usd_wallet * (pct_tl + 0.05))
-        pct_real = pct_tl
-        total_ftd = len(df_team)
-        
-    # ======================
-    # AGENT RTN
-    # ======================
-    else:
-        ventas_usd = df_filtrado["usd"].sum()
-        neto_total = df_filtrado["usd_neto"].sum()
-
-        pct_base = porcentaje_rtn_progresivo(neto_total)
-
-        df_wallet = df_filtrado[df_filtrado["method"] == "WALLET"]
-        df_normal = df_filtrado[df_filtrado["method"] != "WALLET"]
-
-        usd_wallet = df_wallet["usd_neto"].sum()
-        usd_normal = df_normal["usd_neto"].sum()
-
-        comision_final = (usd_normal * pct_base) + (usd_wallet * (pct_base + 0.02))
-        pct_real = pct_base
-        total_ftd = len(df_filtrado)
-
-
-    df_filtrado["commission_usd"] = 0.0
-        
-    if rtn_teamleader and not df_team.empty:
-         df_wallet = df_team[df_team["method"] == "WALLET"]
-         df_normal = df_team[df_team["method"] != "WALLET"]
-        
-         df_filtrado.loc[df_normal.index, "commission_usd"] = df_normal["usd_neto"] * pct_tl
-         df_filtrado.loc[df_wallet.index, "commission_usd"] = df_wallet["usd_neto"] * (pct_tl + 0.05)
-        
-    else:
-         pct_base = pct_real
-         df_wallet = df_filtrado[df_filtrado["method"] == "WALLET"]
-         df_normal = df_filtrado[df_filtrado["method"] != "WALLET"]
-        
-         df_filtrado.loc[df_normal.index, "commission_usd"] = df_normal["usd_neto"] * pct_base
-         df_filtrado.loc[df_wallet.index, "commission_usd"] = df_wallet["usd_neto"] * (pct_base + 0.02)
-
+    pct_real = df_filtrado["comm_pct"].max() if not df_filtrado.empty else 0.0
 
     # ======================
     # CARDS
@@ -737,14 +556,15 @@ def actualizar_dashboard(
     df_tabla["commission_usd"] = df_tabla["commission_usd"].round(2)
 
     return (
-        card("PORCENTAJE COMISIÓN", f"{pct_real*100:.2f}%"),
-        card("VENTAS USD", f"{ventas_usd:,.2f}"),
-        card("BONUS SEMANAL USD", f"{bonus_total_usd:,.2f}"),
-        card("COMISIÓN USD (TOTAL)", f"{comision_final:,.2f}"),
+        card("PORCENTAJE COMISIÓN", f"{pct_real*100:,.2f}%"),
+        card("VENTAS USD", f"{total_usd:,.2f}"),
+        card("BONUS SEMANAL USD", f"{total_bonus:,.2f}"),
+        card("COMISIÓN USD (TOTAL)", f"{total_commission_final:,.2f}"),
         card("TOTAL VENTAS (FTDs)", f"{total_ftd:,}"),
         fig_agent,
-        df_tabla.to_dict("records")
+        df_tabla.to_dict("records"),
     )
+
 
 
 # === 🔟 Index string para capturar imagen (igual que el otro dashboard) ===
@@ -791,42 +611,3 @@ app.index_string = '''
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
