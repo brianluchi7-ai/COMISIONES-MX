@@ -9,6 +9,9 @@ from conexion_mysql import crear_conexion
 # === OBL DIGITAL DASHBOARD — COMISIONES SOLO FTD ===
 # ======================================================
 
+# =====================
+# CARGA DATOS
+# =====================
 def cargar_datos():
     try:
         conexion = crear_conexion()
@@ -21,16 +24,20 @@ def cargar_datos():
         print(f"⚠️ Error SQL, usando CSV: {e}")
     return pd.read_csv("CMN_MASTER_preview.csv", dtype=str)
 
-# === CARGA BASE ===
 df = cargar_datos()
 df.columns = [c.strip().lower() for c in df.columns]
 
-# === SOLO FTD (CLAVE) ===
+# =====================
+# SOLO FTD
+# =====================
 if "type" not in df.columns:
     df["type"] = "FTD"
+
 df = df[df["type"].str.upper() == "FTD"].copy()
 
-# === FECHAS ===
+# =====================
+# FECHAS
+# =====================
 def convertir_fecha(valor):
     try:
         if "/" in str(valor):
@@ -43,9 +50,12 @@ df["date"] = df["date"].astype(str).apply(convertir_fecha)
 df = df[df["date"].notna()]
 df["date"] = df["date"].dt.tz_localize(None)
 
-# === USD ===
+# =====================
+# USD
+# =====================
 def limpiar_usd(valor):
-    if pd.isna(valor): return 0.0
+    if pd.isna(valor):
+        return 0.0
     s = re.sub(r"[^\d,.\-]", "", str(valor))
     if "." in s and "," in s:
         s = s.replace(",", "") if s.rfind(".") > s.rfind(",") else s.replace(".", "").replace(",", ".")
@@ -59,13 +69,17 @@ def limpiar_usd(valor):
 df["usd"] = df["usd"].apply(limpiar_usd)
 df["usd_neto"] = df["usd"]
 
-# === TEXTO LIMPIO ===
-for col in ["team", "agent", "country", "affiliate"]:
+# =====================
+# TEXTO LIMPIO
+# =====================
+for col in ["agent", "team", "country", "affiliate"]:
     if col in df.columns:
         df[col] = df[col].astype(str).str.strip().str.title()
         df[col].replace({"Nan": None, "None": None, "": None}, inplace=True)
 
-# === COMISIÓN PROGRESIVA FTD ===
+# =====================
+# COMISIÓN PROGRESIVA FTD
+# =====================
 def porcentaje_tramo_progresivo(n):
     if n <= 3: return 0.10
     if n <= 7: return 0.17
@@ -74,79 +88,90 @@ def porcentaje_tramo_progresivo(n):
     if n <= 21: return 0.25
     return 0.30
 
-# === CONTEO POR MES (INTERNO, SIN PERIOD EN CALLBACK) ===
+# =====================
+# CONTEO FTD POR MES
+# =====================
 df = df.sort_values(["agent", "date"]).reset_index(drop=True)
-df["_ym"] = df["date"].dt.to_period("M")
+df["_ym"] = df["date"].dt.to_period("M")   # interno
 df["ftd_num"] = df.groupby(["agent", "_ym"]).cumcount() + 1
 
 df["comm_pct"] = df["ftd_num"].apply(porcentaje_tramo_progresivo)
 df["commission_usd"] = df["usd_neto"] * df["comm_pct"]
 
 # ======================================================
-# === DASH APP (MISMO LAYOUT)
+# === DASH APP
 # ======================================================
-
 app = dash.Dash(__name__)
 server = app.server
 app.title = "OBL Digital — Dashboard Comisiones"
 
+# =====================
+# LAYOUT
+# =====================
 app.layout = html.Div(
     style={"backgroundColor": "#0d0d0d", "color": "#000", "fontFamily": "Poppins, Arial", "padding": "20px"},
     children=[
 
-        html.H1("💰 DASHBOARD COMISIONES POR AGENTE", style={
-            "textAlign": "center",
-            "color": "#D4AF37",
-            "marginBottom": "30px",
-            "fontWeight": "bold"
-        }),
+        html.H1(
+            "💰 DASHBOARD COMISIONES POR AGENTE",
+            style={"textAlign": "center", "color": "#D4AF37", "marginBottom": "30px", "fontWeight": "bold"}
+        ),
 
         html.Div(style={"display": "flex", "justifyContent": "space-between"}, children=[
 
-            # === FILTROS (NO SE TOCAN) ===
-            html.Div(style={
-                "width": "25%",
-                "backgroundColor": "#1a1a1a",
-                "padding": "20px",
-                "borderRadius": "12px",
-                "boxShadow": "0 0 15px rgba(212,175,55,0.3)",
-                "textAlign": "center"
-            }, children=[
+            # ========= FILTROS =========
+            html.Div(
+                style={
+                    "width": "25%",
+                    "backgroundColor": "#1a1a1a",
+                    "padding": "20px",
+                    "borderRadius": "12px",
+                    "boxShadow": "0 0 15px rgba(212,175,55,0.3)",
+                    "textAlign": "center"
+                },
+                children=[
+                    html.Label("Date Range", style={"color": "#D4AF37", "fontWeight": "bold", "display": "block"}),
+                        dcc.DatePickerRange(
+                            id="filtro-fecha",
+                            start_date=df["date"].min(),
+                            end_date=df["date"].max(),
+                            display_format="YYYY-MM-DD",
+                            minimum_nights=0
+                    ),
+                    html.Br(), html.Br(),
 
-                html.Label("Date Range", style={"color": "#D4AF37", "fontWeight": "bold"}),
-                dcc.DatePickerRange(
-                    id="filtro-fecha",
-                    start_date=df["date"].min(),
-                    end_date=df["date"].max(),
-                    display_format="YYYY-MM-DD"
-                ),
-                html.Br(), html.Br(),
+                    html.Label("FTD Agent", style={"color": "#D4AF37", "fontWeight": "bold"}),
+                    dcc.Dropdown(
+                        id="filtro-ftd-agent",
+                        multi=True,
+                        placeholder="Selecciona FTD agent"
+                    ),
 
-                html.Br(),
-                html.Label("FTD Agent", style={"color": "#D4AF37", "fontWeight": "bold"}),
-                dcc.Dropdown(id="filtro-ftd-agent", multi=True),
+                    html.Br(),
+                    html.Label("Tipo de cambio (MXN/USD)", style={"color": "#D4AF37", "fontWeight": "bold"}),
+                    dcc.Input(
+                        id="input-tc",
+                        type="number",
+                        value=18.19,
+                        min=10, max=25, step=0.01,
+                        style={"width": "120px", "textAlign": "center", "marginTop": "10px"}
+                    ),
+                ]
+            ),
 
-                html.Br(),
-                html.Label("Tipo de cambio (MXN/USD)", style={"color": "#D4AF37", "fontWeight": "bold"}),
-                dcc.Input(
-                    id="input-tc",
-                    type="number",
-                    value=18.19,
-                    step=0.01,
-                    style={"width": "120px", "textAlign": "center"}
-                ),
-            ]),
-
-            # === PANEL ===
+            # ========= PANEL =========
             html.Div(style={"width": "72%"}, children=[
 
-                html.Div(style={"display": "flex", "justifyContent": "space-around", "flexWrap": "wrap", "gap": "10px"}, children=[
-                    html.Div(id="card-porcentaje", style={"flex": "1 1 18%"}),
-                    html.Div(id="card-usd-ventas", style={"flex": "1 1 18%"}),
-                    html.Div(id="card-usd-bonus", style={"flex": "1 1 18%"}),
-                    html.Div(id="card-usd-comision", style={"flex": "1 1 18%"}),
-                    html.Div(id="card-total-ftd", style={"flex": "1 1 18%"}),
-                ]),
+                html.Div(
+                    style={"display": "flex", "justifyContent": "space-around", "flexWrap": "wrap", "gap": "10px"},
+                    children=[
+                        html.Div(id="card-porcentaje", style={"flex": "1 1 18%"}),
+                        html.Div(id="card-usd-ventas", style={"flex": "1 1 18%"}),
+                        html.Div(id="card-usd-bonus", style={"flex": "1 1 18%"}),
+                        html.Div(id="card-usd-comision", style={"flex": "1 1 18%"}),
+                        html.Div(id="card-total-ftd", style={"flex": "1 1 18%"}),
+                    ],
+                ),
 
                 html.Br(),
                 dcc.Graph(id="grafico-comision-agent", style={"height": "400px"}),
@@ -173,7 +198,6 @@ app.layout = html.Div(
                     columns=[
                         {"name": "DATE", "id": "date"},
                         {"name": "AGENT", "id": "agent"},
-                        {"name": "TYPE", "id": "type"},
                         {"name": "TEAM", "id": "team"},
                         {"name": "COUNTRY", "id": "country"},
                         {"name": "AFFILIATE", "id": "affiliate"},
@@ -189,20 +213,18 @@ app.layout = html.Div(
 )
 
 # ======================================================
-# === CALLBACKS ===
+# === CALLBACKS
 # ======================================================
 
 @app.callback(
-    [Output("filtro-ftd-agent", "options")],
+    Output("filtro-ftd-agent", "options"),
     [Input("filtro-fecha", "start_date"), Input("filtro-fecha", "end_date")]
 )
 def cargar_agentes(start, end):
     dff = df.copy()
     if start and end:
         dff = dff[(dff["date"] >= start) & (dff["date"] <= end)]
-    agents = sorted(dff["agent"].dropna().unique())
-    opts = [{"label": a, "value": a} for a in agents]
-    return opts, opts
+    return [{"label": a, "value": a} for a in sorted(dff["agent"].dropna().unique())]
 
 @app.callback(
     [
@@ -221,27 +243,34 @@ def cargar_agentes(start, end):
         Input("input-tc", "value"),
     ],
 )
-def actualizar_dashboard(_, ftd_agents, start, end, tc):
+def actualizar_dashboard(agents, start, end, tc):
+
+    if tc is None:
+        tc = 18.19
 
     dff = df.copy()
 
-    if ftd_agents:
-        dff = dff[dff["agent"].isin(ftd_agents)]
+    if agents:
+        dff = dff[dff["agent"].isin(agents)]
 
     if start and end:
         dff = dff[(dff["date"] >= start) & (dff["date"] <= end)]
 
-    # === BONUS SEMANAL ===
+    # ===== BONUS SEMANAL =====
     dff["year"] = dff["date"].dt.year
     dff["month"] = dff["date"].dt.month
     dff["week"] = dff["date"].apply(lambda d: (d.day + d.replace(day=1).weekday() - 1) // 7 + 1)
 
     bonus = 0.0
     for _, r in dff.groupby(["agent", "year", "month", "week"]).size().reset_index(name="ftds").iterrows():
-        if r.ftds >= 15: bonus += 150
-        elif r.ftds >= 5: bonus += 1500 / tc
-        elif r.ftds >= 4: bonus += 1000 / tc
-        elif r.ftds >= 2: bonus += 500 / tc
+        if r.ftds >= 15:
+            bonus += 150
+        elif r.ftds >= 5:
+            bonus += 1500 / tc
+        elif r.ftds >= 4:
+            bonus += 1000 / tc
+        elif r.ftds >= 2:
+            bonus += 500 / tc
 
     bonus = round(bonus, 2)
 
@@ -250,20 +279,24 @@ def actualizar_dashboard(_, ftd_agents, start, end, tc):
     total_ftd = len(dff)
     pct = dff["comm_pct"].max() if not dff.empty else 0
 
-    card = lambda t, v: html.Div(
-        [html.H4(t, style={"color": "#D4AF37"}), html.H2(v, style={"color": "#fff"})],
-        style={
-            "backgroundColor": "#1a1a1a",
-            "borderRadius": "10px",
-            "padding": "20px",
-            "textAlign": "center",
-            "boxShadow": "0 0 10px rgba(212,175,55,0.3)",
-        }
-    )
+    card_style = {
+        "backgroundColor": "#1a1a1a",
+        "borderRadius": "10px",
+        "padding": "20px",
+        "textAlign": "center",
+        "boxShadow": "0 0 10px rgba(212,175,55,0.3)",
+    }
+
+    def card(title, value):
+        return html.Div(
+            [html.H4(title, style={"color": "#D4AF37"}), html.H2(value, style={"color": "#fff"})],
+            style=card_style
+        )
 
     fig = px.bar(
         dff.groupby("agent", as_index=False)["commission_usd"].sum(),
-        x="agent", y="commission_usd",
+        x="agent",
+        y="commission_usd",
         title="Comisión USD by Agent",
         color="commission_usd",
         color_continuous_scale="YlOrBr"
@@ -277,10 +310,9 @@ def actualizar_dashboard(_, ftd_agents, start, end, tc):
         xaxis_tickangle=-90
     )
 
-    tabla = dff[[
-        "date", "agent", "type", "team", "country", "affiliate",
-        "usd", "ftd_num", "comm_pct", "commission_usd"
-    ]].copy()
+    tabla = dff[
+        ["date", "agent", "team", "country", "affiliate", "usd", "ftd_num", "comm_pct", "commission_usd"]
+    ].copy()
 
     tabla["comm_pct"] = tabla["comm_pct"].apply(lambda x: f"{x*100:.2f}%")
     tabla["commission_usd"] = tabla["commission_usd"].round(2)
