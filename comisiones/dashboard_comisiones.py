@@ -98,6 +98,14 @@ df["ftd_num"] = df.groupby(["agent", "_ym"]).cumcount() + 1
 df["comm_pct"] = df["ftd_num"].apply(porcentaje_tramo_progresivo)
 df["commission_usd"] = df["usd_neto"] * df["comm_pct"]
 
+
+# === 6️⃣ Inicializar app ===
+external_scripts = [
+    "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.10.0/pptxgen.bundle.js"
+]
+
 # ======================================================
 # === DASH APP
 # ======================================================
@@ -330,3 +338,4 @@ def actualizar_dashboard(agents, start, end, tc):
 # ======================================================
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
