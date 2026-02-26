@@ -3,7 +3,6 @@ import pandas as pd
 import dash
 import io
 from dash import State
-from dash import send_bytes
 from dash import html, dcc, Input, Output, dash_table
 import plotly.express as px
 from conexion_mysql import crear_conexion
@@ -426,8 +425,8 @@ def exportar_excel(n_clicks, agents, start, end, tc):
             resumen.to_excel(writer, sheet_name="Resumen", index=False)
             detalle.to_excel(writer, sheet_name="Detalle", index=False)
 
-    return send_bytes(to_excel, "dashboard_comisiones.xlsx")
-
+    return dcc.send_bytes(to_excel, "dashboard_comisiones.xlsx")
+    
 # === 9️⃣ Captura PDF/PPT desde iframe ===
 app.index_string = '''
 <!DOCTYPE html>
@@ -473,6 +472,7 @@ app.index_string = '''
 # ======================================================
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
