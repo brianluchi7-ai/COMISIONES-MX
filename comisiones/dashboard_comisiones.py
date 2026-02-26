@@ -190,6 +190,22 @@ app.layout = html.Div(
                 html.Br(),
                 html.H4("📋 Detalle de transacciones y comisiones", style={"color": "#D4AF37"}),
 
+                html.Button(
+                    "⬇️ Exportar a Excel",
+                    id="btn-exportar-excel",
+                    style={
+                        "backgroundColor": "#D4AF37",
+                        "color": "#000",
+                        "border": "none",
+                        "padding": "10px 20px",
+                        "marginBottom": "10px",
+                        "fontWeight": "bold",
+                        "cursor": "pointer",
+                        "borderRadius": "6px"
+                    }
+                ),
+                dcc.Download(id="download-excel"),
+
                 dash_table.DataTable(
                     id="tabla-detalle",
                     page_size=10,
@@ -246,6 +262,7 @@ def cargar_agentes(start, end):
         Output("card-total-ftd", "children"),
         Output("grafico-comision-agent", "figure"),
         Output("tabla-detalle", "data"),
+        Output("tabla-detalle", "data_timestamp"),
     ],
     [
         Input("filtro-ftd-agent", "value"),
@@ -336,7 +353,80 @@ def actualizar_dashboard(agents, start, end, tc):
         card("TOTAL VENTAS (FTDs)", f"{total_ftd:,}"),
         fig,
         tabla.to_dict("records"),
+        pd.Timestamp.now().timestamp(),
     )
+
+@app.callback(
+    Output("download-excel", "data"),
+    Input("btn-exportar-excel", "n_clicks"),
+    State("filtro-ftd-agent", "value"),
+    State("filtro-fecha", "start_date"),
+    State("filtro-fecha", "end_date"),
+    State("input-tc", "value"),
+    prevent_initial_call=True
+)
+def exportar_excel(n_clicks, agents, start, end, tc):
+
+    if tc is None:
+        tc = 18.19
+
+    dff = df.copy()
+
+    if agents:
+        dff = dff[dff["agent"].isin(agents)]
+
+    if start and end:
+        dff = dff[(dff["date"] >= start) & (dff["date"] <= end)]
+
+    dff["year"] = dff["date"].dt.year
+    dff["month"] = dff["date"].dt.month
+    dff["week"] = dff["date"].apply(lambda d: (d.day + d.replace(day=1).weekday() - 1) // 7 + 1)
+
+    bonus = 0.0
+    for _, r in dff.groupby(["agent", "year", "month", "week"]).size().reset_index(name="ftds").iterrows():
+        if r.ftds >= 15:
+            bonus += 150
+        elif r.ftds >= 5:
+            bonus += 1500 / tc
+        elif r.ftds >= 4:
+            bonus += 1000 / tc
+        elif r.ftds >= 2:
+            bonus += 500 / tc
+
+    total_usd = dff["usd_neto"].sum()
+    total_comm = dff["commission_usd"].sum() + bonus
+    total_ftd = len(dff)
+    pct = dff["comm_pct"].max() if not dff.empty else 0
+
+    resumen = pd.DataFrame({
+        "Metrica": [
+            "PORCENTAJE COMISIÓN",
+            "VENTAS USD",
+            "BONUS SEMANAL USD",
+            "COMISIÓN USD (TOTAL)",
+            "TOTAL VENTAS (FTDs)"
+        ],
+        "Valor": [
+            f"{pct*100:.2f}%",
+            round(total_usd, 2),
+            round(bonus, 2),
+            round(total_comm, 2),
+            total_ftd
+        ]
+    })
+
+    detalle = dff[
+        ["date", "agent", "team", "country", "affiliate", "usd", "ftd_num", "comm_pct", "commission_usd"]
+    ].copy()
+
+    detalle["comm_pct"] = detalle["comm_pct"] * 100
+
+    def to_excel(bytes_io):
+        with pd.ExcelWriter(bytes_io, engine="xlsxwriter") as writer:
+            resumen.to_excel(writer, sheet_name="Resumen", index=False)
+            detalle.to_excel(writer, sheet_name="Detalle", index=False)
+
+    return send_bytes(to_excel, "dashboard_comisiones.xlsx")
 
 # === 9️⃣ Captura PDF/PPT desde iframe ===
 app.index_string = '''
@@ -383,6 +473,7 @@ app.index_string = '''
 # ======================================================
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
