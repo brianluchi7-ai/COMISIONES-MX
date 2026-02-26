@@ -1,6 +1,9 @@
 import re
 import pandas as pd
 import dash
+import io
+from dash import State
+from dash import send_bytes
 from dash import html, dcc, Input, Output, dash_table
 import plotly.express as px
 from conexion_mysql import crear_conexion
@@ -109,7 +112,7 @@ external_scripts = [
 # ======================================================
 # === DASH APP
 # ======================================================
-app = dash.Dash(__name__)
+app = dash.Dash(__name__, external_scripts=external_scripts)
 server = app.server
 app.title = "OBL Digital — Dashboard Comisiones"
 
@@ -338,4 +341,5 @@ def actualizar_dashboard(agents, start, end, tc):
 # ======================================================
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
