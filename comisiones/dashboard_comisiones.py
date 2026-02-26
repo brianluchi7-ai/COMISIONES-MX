@@ -293,16 +293,16 @@ def actualizar_dashboard(agents, start, end, tc):
         if r.ftds >= 15:
             bonus += 150
         elif r.ftds >= 5:
-            bonus += 1500 / tc
+            bonus += 1500
         elif r.ftds >= 4:
-            bonus += 1000 / tc
+            bonus += 1000
         elif r.ftds >= 2:
-            bonus += 500 / tc
+            bonus += 500
 
     bonus = round(bonus, 2)
 
     total_usd = dff["usd_neto"].sum()
-    total_comm = dff["commission_usd"].sum() + bonus
+    total_comm = dff["commission_usd"].sum()
     total_ftd = len(dff)
     pct = dff["comm_pct"].max() if not dff.empty else 0
 
@@ -347,8 +347,8 @@ def actualizar_dashboard(agents, start, end, tc):
     return (
         card("PORCENTAJE COMISIÓN", f"{pct*100:.2f}%"),
         card("VENTAS USD", f"{total_usd:,.2f}"),
-        card("BONUS SEMANAL USD", f"{bonus:,.2f}"),
-        card("COMISIÓN USD (TOTAL)", f"{total_comm:,.2f}"),
+        card("BONUS SEMANAL MXN", f"{bonus:,.2f}"),
+        card("COMISIÓN USD BY FTD", f"{total_comm:,.2f}"),
         card("TOTAL VENTAS (FTDs)", f"{total_ftd:,}"),
         fig,
         tabla.to_dict("records"),
@@ -386,14 +386,14 @@ def exportar_excel(n_clicks, agents, start, end, tc):
         if r.ftds >= 15:
             bonus += 150
         elif r.ftds >= 5:
-            bonus += 1500 / tc
+            bonus += 1500
         elif r.ftds >= 4:
-            bonus += 1000 / tc
+            bonus += 1000
         elif r.ftds >= 2:
-            bonus += 500 / tc
+            bonus += 500
 
     total_usd = dff["usd_neto"].sum()
-    total_comm = dff["commission_usd"].sum() + bonus
+    total_comm = dff["commission_usd"].sum()
     total_ftd = len(dff)
     pct = dff["comm_pct"].max() if not dff.empty else 0
 
@@ -401,8 +401,8 @@ def exportar_excel(n_clicks, agents, start, end, tc):
         "Metrica": [
             "PORCENTAJE COMISIÓN",
             "VENTAS USD",
-            "BONUS SEMANAL USD",
-            "COMISIÓN USD (TOTAL)",
+            "BONUS SEMANAL MXN",
+            "COMISIÓN USD BY FTD",
             "TOTAL VENTAS (FTDs)"
         ],
         "Valor": [
@@ -472,6 +472,7 @@ app.index_string = '''
 # ======================================================
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8060, debug=True)
+
 
 
 
